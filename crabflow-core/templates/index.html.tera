@@ -5,8 +5,12 @@
   <title>{{ title }}</title>
 </head>
 <body>
-  <h1>{{ message }}</h1>
-  <p>This page is rendered with <b>Tera</b> templates!</p>
+    <h2>Network Interfaces</h2>
+    <ul>
+        {% for iface in interfaces %}
+            <li>{{ iface }}</li>
+        {% endfor %}
+    </ul>
 
 </body>
 </html>
