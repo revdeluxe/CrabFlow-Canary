@@ -1,17 +1,18 @@
 #[macro_use]
 extern crate rocket;
+mod monitor;
 
 mod settings;
 use getifaddrs::getifaddrs;
 use rocket::serde::Serialize;
 use rocket_dyn_templates::Template;
 use settings::Settings;
+use monitor::gather_dashboard_context;
 
 #[derive(Serialize)]
 struct Context {
     title: String,
-    message: String,
-    interfaces: Vec<String>, // ← this must match the template
+    message: String
 }
 
 // ---- FUNCTIONS ----
@@ -32,13 +33,18 @@ fn get_interfaces() -> Vec<String> {
 }
 
 #[get("/")]
-fn index() -> Template {
+fn landing_page() -> Template {
     let context = Context {
         title: "CrabFlow Canary".to_string(),
-        message: "Welcome to the Rocket + Tera Powered UI".to_string(),
-        interfaces: get_interfaces(),
+        message: "Welcome to the Rocket + Tera Powered UI".to_string()
     };
     Template::render("index", &context)
+}
+
+#[get("/dashboard")]
+fn dashboard_page() -> Template {
+    let context = gather_dashboard_context();
+    Template::render("dashboard", &context)
 }
 
 // ---- EXECUTORS ----
@@ -49,5 +55,5 @@ fn rocket() -> _ {
     rocket::build()
         .attach(Template::fairing())
         .manage(settings)
-        .mount("/", routes![index])
+        .mount("/", routes![landing_page, dashboard_page])
 }
