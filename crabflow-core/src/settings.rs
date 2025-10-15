@@ -9,6 +9,7 @@ pub struct Settings {
     pub enable_ui: bool,
     pub sdnc_mode: String,
     pub log_level: String,
+    pub default_theme: String, // Add your new setting here
 }
 
 impl Settings {
@@ -19,6 +20,7 @@ impl Settings {
             enable_ui: true,
             sdnc_mode: "hybrid".into(),
             log_level: "info".into(),
+            default_theme: "dark".into(), // Add the default value here
         }
     }
 

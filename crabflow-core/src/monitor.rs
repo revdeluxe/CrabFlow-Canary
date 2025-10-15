@@ -1,7 +1,8 @@
-use serde::Serialize;
-use sysinfo::System;
 use gethostname::gethostname;
 use getifaddrs::getifaddrs;
+use serde::Serialize;
+use std::collections::HashMap;
+use sysinfo::System;
 
 #[derive(Serialize)]
 pub struct DashboardContext {
@@ -34,17 +35,26 @@ pub fn gather_dashboard_context() -> DashboardContext {
     // Memory in MB
     let memory = format!("{} MB", sys.total_memory() / 1024);
 
-    // Interfaces: render address with debug formatter to avoid matching on internal Address variants
-    let interfaces: Vec<String> = getifaddrs()
-        .map(|ifaces| {
-            ifaces
-                .map(|iface| {
-                    let ip = format!("{:?}", iface.address);
-                    format!("{} → {}", iface.name, ip)
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    // Interfaces
+    let mut interface_map: HashMap<String, Vec<String>> = HashMap::new();
+    if let Ok(ifaces) = getifaddrs() {
+        for iface in ifaces {
+            let ip_str = match iface.address {
+                getifaddrs::Address::V4(addr) => Some(addr.address.to_string()),
+                getifaddrs::Address::V6(addr) => Some(addr.address.to_string()),
+                _ => None,
+            };
+            if let Some(ip) = ip_str {
+                interface_map.entry(iface.name).or_default().push(ip);
+            }
+        }
+    }
+
+    let mut interfaces: Vec<String> = interface_map
+        .into_iter()
+        .map(|(name, ips)| format!("{} → {}", name, ips.join(", ")))
+        .collect();
+    interfaces.sort();
 
     DashboardContext {
         title: "CrabFlow Canary".into(),
