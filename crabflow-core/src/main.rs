@@ -8,6 +8,7 @@ use monitor::gather_dashboard_context;
 use rocket::State;
 use rocket::fs::{FileServer, relative};
 use rocket::serde::Serialize;
+use rocket::serde::json::Json;
 use rocket_dyn_templates::Template;
 use settings::Settings;
 
@@ -15,6 +16,30 @@ use settings::Settings;
 struct Context {
     title: String,
     message: String,
+}
+
+// ---- API ----
+#[get("/api/settings")]
+fn get_settings(settings: &State<Settings>) -> Json<Settings> {
+    Json(settings.inner().clone())
+}
+
+#[post("/api/settings", data = "<new_settings>")]
+fn save_settings(new_settings: Json<Settings>, settings: &State<Settings>) -> Json<Settings> {
+    let mut settings = settings.inner().clone();
+    settings.app_name = new_settings.app_name.clone();
+    settings.port = new_settings.port;
+    settings.enable_ui = new_settings.enable_ui;
+    settings.sdnc_mode = new_settings.sdnc_mode.clone();
+    settings.log_level = new_settings.log_level.clone();
+    settings.default_theme = new_settings.default_theme.clone();
+
+    let _ = std::fs::write(
+        "CrabFlow.json",
+        serde_json::to_string_pretty(&settings).unwrap(),
+    );
+
+    Json(settings)
 }
 
 // ---- FUNCTIONS ----
@@ -63,7 +88,16 @@ fn rocket() -> _ {
     rocket::build()
         .attach(Template::fairing())
         .manage(settings)
-        .mount("/", routes![landing_page, dashboard_page, settings_page])
+        .mount(
+            "/",
+            routes![
+                landing_page,
+                dashboard_page,
+                settings_page,
+                get_settings,
+                save_settings
+            ],
+        )
         // The path needs to be relative to this file's location (src/main.rs)
         .mount("/static", FileServer::from(relative!("/templates/static")))
 }
