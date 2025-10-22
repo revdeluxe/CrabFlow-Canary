@@ -2,7 +2,7 @@ use gethostname::gethostname;
 use getifaddrs::getifaddrs;
 use serde::Serialize;
 use std::collections::HashMap;
-use sysinfo::System;
+use sysinfo::{CpuExt, NetworkExt, System, SystemExt};
 
 #[derive(Serialize)]
 pub struct DashboardContext {
@@ -12,6 +12,28 @@ pub struct DashboardContext {
     pub cpu: String,
     pub memory: String,
     pub interfaces: Vec<String>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct InterfaceTraffic {
+    pub name: String,
+    pub rx: u64,
+    pub tx: u64,
+}
+
+pub fn get_network_traffic() -> Vec<InterfaceTraffic> {
+    let mut sys = System::new_all();
+    sys.refresh_networks();
+    let networks = sys.networks();
+    let mut traffic_data = Vec::new();
+    for (iface_name, data) in networks {
+        traffic_data.push(InterfaceTraffic {
+            name: iface_name.clone(),
+            rx: data.received(),
+            tx: data.transmitted(),
+        });
+    }
+    traffic_data
 }
 
 pub fn gather_dashboard_context() -> DashboardContext {

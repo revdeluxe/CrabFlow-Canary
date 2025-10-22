@@ -47,4 +47,9 @@ impl Settings {
         let _ = fs::write(path, serde_json::to_string_pretty(&settings).unwrap());
         settings
     }
+
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
+        let content = serde_json::to_string_pretty(self).unwrap();
+        fs::write(path, content)
+    }
 }

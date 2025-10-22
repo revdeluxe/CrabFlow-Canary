@@ -18,13 +18,8 @@
                     </a>
                 </span>
             </div>
-            <div class="logo">
-                <h1></h1>
-                <span class="badge"></span>
-            </div>
             <div class="theme-switcher">
                 <button id="theme-toggle">Toggle Theme</button>
-                <button id="settings">Settings</button>
             </div>
 
         </header>
@@ -80,7 +75,7 @@
             </section>
         </main>
     </div>
-    <script src="/static/settings.js"></script>
+    <script src="/static/dashboard.js"></script>
 
 </body>
 </html>
