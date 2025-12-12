@@ -1,8 +1,0 @@
-{
-  "app_name": "CrabFlow Canary",
-  "port": 8000,
-  "enable_ui": true,
-  "sdnc_mode": "hybrid",
-  "log_level": "debug",
-  "default_theme": "dark"
-}
