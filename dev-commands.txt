@@ -1,0 +1,15 @@
+  
+From /bin
+  cd crabflow
+  npm install
+  npm run tauri android init
+
+For Desktop development, run:
+  npm run tauri dev
+
+For Android development, run:
+  npm run tauri android dev
+
+
+
+for any invoke error check invoke exposure on main.rs
