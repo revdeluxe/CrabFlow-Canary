@@ -1,0 +1,39 @@
+{
+  "users": [
+    {
+      "username": "admin",
+      "password_hash": "admin",
+      "role": "admin",
+      "groups": [
+        "admin"
+      ],
+      "is_active": true,
+      "is_approved": true,
+      "login_history": [],
+      "id_document_path": null
+    },
+    {
+      "username": "Henry",
+      "password_hash": "user1",
+      "role": "user",
+      "groups": [],
+      "is_active": true,
+      "is_approved": true,
+      "login_history": [],
+      "id_document_path": null
+    },
+    {
+      "username": "admin1",
+      "password_hash": "123",
+      "role": "user",
+      "groups": [],
+      "is_active": false,
+      "is_approved": true,
+      "login_history": [],
+      "id_document_path": null
+    }
+  ],
+  "settings": {
+    "auto_approve_new_users": false
+  }
+}

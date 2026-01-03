@@ -1,18 +1,16 @@
 // src-tauri/src/client.rs
 
-use tauri::Manager;
+// use tauri::Manager;
 
 // Import your feature modules
-mod dhcp;
-mod dns;
-mod logging;
-mod fetch;
-mod post;
+use crate::network::dhcp;
+use crate::network::dns;
+use crate::sysmodules::{logging, fetch, post};
 
 // Re-export structs for frontend use
 pub use dhcp::{Lease, LeaseInput};
 pub use dns::{DnsRecord, DnsRecordInput};
-pub use logging::log_event;
+// pub use logging::log_event;
 
 /// DHCP commands
 #[tauri::command]
@@ -55,10 +53,10 @@ pub fn log_action(actor: String, action: String, target: String) {
 /// Example FS fetch/post wrappers
 #[tauri::command]
 pub fn fetch_config(path: String) -> Result<String, String> {
-    fetch::read_file(path)
+    fetch::read_file(&path)
 }
 
 #[tauri::command]
 pub fn save_config(path: String, data: String) -> Result<(), String> {
-    post::write_file(path, data)
+    post::write_file(&path, &data)
 }

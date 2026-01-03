@@ -1,0 +1,16 @@
+[
+  {
+    "ip": "10.0.0.1",
+    "mac": "86:74:e1:98:bc:af",
+    "hostname": "Unknown",
+    "expires_at": "1767561661",
+    "static_lease": false
+  },
+  {
+    "ip": "10.0.0.2",
+    "mac": "34:2f:bd:a6:57:0d",
+    "hostname": "Unknown",
+    "expires_at": "1767561939",
+    "static_lease": false
+  }
+]

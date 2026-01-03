@@ -1,0 +1,222 @@
+<script>
+  import { onMount } from 'svelte'
+  import { api } from '$lib/tauri'
+
+  let user = {
+    username: 'Admin',
+    email: 'admin@example.com',
+    role: 'Administrator'
+  }
+  let history = []
+  let loading = true
+  let fileInput;
+
+  onMount(async () => {
+    try {
+      const config = await api.loadSetup()
+      if (config) {
+        user.username = config.admin_user || 'Admin'
+        user.email = config.admin_email || 'admin@example.com'
+      }
+      
+      try {
+          history = await api.getUserHistory(user.username)
+      } catch (err) {
+          console.warn("Could not fetch history:", err)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      loading = false
+    }
+  })
+
+  async function handleIdUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (history.length === 0) {
+        // alert("You must be logged in via the portal (tagged) to upload an ID.");
+        // return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const base64 = e.target.result;
+        try {
+            await api.uploadId(user.username, base64);
+            alert("ID uploaded successfully!");
+        } catch (err) {
+            alert("Upload failed: " + err);
+        }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function triggerFileUpload() {
+    fileInput.click();
+  }
+</script>
+
+<style>
+  .profile-img-container {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    margin: 0 auto;
+    cursor: pointer;
+  }
+  
+  .profile-img-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.3s;
+    color: white;
+    font-size: 1.5rem;
+  }
+
+  .profile-img-container:hover .profile-img-overlay {
+    opacity: 1;
+  }
+</style>
+
+<section class="content-header">
+  <div class="container-fluid">
+    <div class="row mb-2">
+      <div class="col-sm-6">
+        <h1>Profile</h1>
+      </div>
+      <div class="col-sm-6">
+        <ol class="breadcrumb float-sm-right">
+          <li class="breadcrumb-item"><a href="/admin/dashboard">Home</a></li>
+          <li class="breadcrumb-item active">User Profile</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="content">
+  <div class="container-fluid">
+    <div class="row">
+      
+      <!-- Left Column: Profile Info (View Container) -->
+      <div class="col-12">
+        <div class="card card-primary card-outline">
+          <div class="card-body box-profile">
+            <div class="text-center">
+              <div class="profile-img-container" on:click={triggerFileUpload}>
+                <div class="img-circle elevation-2 d-flex justify-content-center align-items-center bg-light" style="width: 100%; height: 100%; font-size: 3rem;">
+                  <i class="fas fa-user"></i>
+                </div>
+                <div class="profile-img-overlay">
+                  <i class="fas fa-camera"></i>
+                </div>
+              </div>
+            </div>
+            <h3 class="profile-username text-center mt-3">{user.username}</h3>
+            <p class="text-muted text-center">{user.role}</p>
+            
+            <ul class="list-group list-group-unbordered mb-3">
+              <li class="list-group-item">
+                <b>Email</b> <a class="float-right">{user.email}</a>
+              </li>
+            </ul>
+
+            <!-- Hidden File Input -->
+            <input type="file" bind:this={fileInput} style="display: none;" on:change={handleIdUpload}>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Settings Form (Edit Container) -->
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header p-2">
+            <ul class="nav nav-pills">
+              <li class="nav-item"><a class="nav-link active" href="#settings" data-toggle="tab">Settings</a></li>
+            </ul>
+          </div>
+          <div class="card-body">
+            <div class="tab-content">
+              <div class="active tab-pane" id="settings">
+                <form>
+                  <div class="form-group">
+                    <label for="inputName">Username</label>
+                    <input type="text" class="form-control" id="inputName" placeholder="Name" bind:value={user.username}>
+                  </div>
+                  <div class="form-group">
+                    <label for="inputEmail">Email</label>
+                    <input type="email" class="form-control" id="inputEmail" placeholder="Email" bind:value={user.email}>
+                  </div>
+                  
+                  <!-- Explicit Upload Button in Edit Container -->
+                  <div class="form-group">
+                    <label>ID Document</label>
+                    <div>
+                      <button type="button" class="btn btn-default" on:click={triggerFileUpload}>
+                        <i class="fas fa-upload"></i> Upload ID
+                      </button>
+                      <span class="text-muted ml-2 small">Or click profile picture</span>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <button type="submit" class="btn btn-danger">Save Changes</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Login History Card (Full Width Below) -->
+    <div class="row">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Login History</h3>
+          </div>
+          <div class="card-body table-responsive p-0">
+            <table class="table table-hover text-nowrap">
+              <thead>
+                <tr>
+                  <th>IP</th>
+                  <th>MAC</th>
+                  <th>Device</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each history as record}
+                  <tr>
+                    <td>{record.ip}</td>
+                    <td>{record.mac}</td>
+                    <td>{record.device_name || 'Unknown'}</td>
+                    <td>{new Date(record.timestamp).toLocaleString()}</td>
+                  </tr>
+                {/each}
+                {#if history.length === 0}
+                  <tr><td colspan="4" class="text-center">No login history found.</td></tr>
+                {/if}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>

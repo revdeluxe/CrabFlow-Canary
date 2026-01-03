@@ -22,40 +22,83 @@
   onMount(refresh)
 </script>
 
-<style>
-  .dashboard {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    padding: 2rem;
-  }
-  .card {
-    background: #fff;
-    border-radius: 8px;
-    padding: 1rem;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-  }
-  .title {
-    font-size: 1.2rem;
-    margin-bottom: 0.5rem;
-  }
-  .value {
-    font-size: 2rem;
-    font-weight: bold;
-  }
-</style>
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0">Portal Dashboard</h1>
+  </div>
+</div>
 
-<h1>CrabFlow Dashboard</h1>
+<div class="row">
+  <div class="col-md-12">
+    <div class="callout callout-info">
+      <h5>Welcome!</h5>
+      <p>Welcome to your network session. View traffic, device status, and profile info here.</p>
+    </div>
+  </div>
+</div>
 
-<h2>Portal Dashboard</h2>
-<p>Welcome to your network session. View traffic, device status, and profile info here.</p>
+<div class="row">
+  <div class="col-lg-4 col-6">
+    <!-- small box -->
+    <div class="small-box bg-info">
+      <div class="inner">
+        {#if traffic}
+          <h3>{traffic.bps_rx} <small>bps</small></h3>
+          <p>Download Speed</p>
+        {:else}
+          <h3>Loading...</h3>
+        {/if}
+      </div>
+      <div class="icon">
+        <i class="fas fa-download"></i>
+      </div>
+    </div>
+  </div>
+  
+  <div class="col-lg-4 col-6">
+    <!-- small box -->
+    <div class="small-box bg-success">
+      <div class="inner">
+        {#if traffic}
+          <h3>{traffic.bps_tx} <small>bps</small></h3>
+          <p>Upload Speed</p>
+        {:else}
+          <h3>Loading...</h3>
+        {/if}
+      </div>
+      <div class="icon">
+        <i class="fas fa-upload"></i>
+      </div>
+    </div>
+  </div>
 
-<div class="card">
-  <div class="title">Traffic</div>
-  {#if traffic}
-    <div class="value">{traffic.bps_rx}↓ / {traffic.bps_tx}↑</div>
-    <small>TCP {traffic.tcp_pct}% | UDP {traffic.udp_pct}% | ICMP {traffic.icmp_pct}%</small>
-  {:else}
-    <div class="value">Loading…</div>
-  {/if}
+  <div class="col-lg-4 col-6">
+    <div class="info-box">
+      <span class="info-box-icon bg-warning"><i class="fas fa-chart-pie"></i></span>
+      <div class="info-box-content">
+        <span class="info-box-text">Traffic Distribution</span>
+        {#if traffic}
+          <span class="info-box-number">TCP: {traffic.tcp_pct}%</span>
+          <span class="info-box-number">UDP: {traffic.udp_pct}%</span>
+        {:else}
+          <span class="info-box-number">Loading...</span>
+        {/if}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-12">
+    <div class="card card-primary card-outline">
+        <div class="card-header">
+            <h3 class="card-title">Connectivity Test</h3>
+        </div>
+        <div class="card-body p-0">
+            <div class="embed-responsive embed-responsive-16by9">
+                <iframe class="embed-responsive-item" src="https://www.google.com/webhp?igu=1" allowfullscreen title="Google Connectivity Test"></iframe>
+            </div>
+        </div>
+    </div>
+  </div>
 </div>

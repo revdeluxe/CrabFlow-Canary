@@ -2,36 +2,58 @@
 
 use std::path::PathBuf;
 use std::fs;
-use serde::{Serialize, Deserialize};
-use dirs::config_dir;
-
-#[derive(Serialize, Deserialize)]
-pub struct SetupConfig {
-    pub hostname: String,
-    pub admin_email: String,
-    pub admin_user: String,
-    pub admin_pass: String, // ⚠️ hash later
-    pub telemetry: bool,
-    pub first_run: bool,
-}
+// use serde::{Serialize, Deserialize};
+use dotenv::var;
+use crate::sysmodules::config::{get_project_root, SetupConfig};
 
 fn config_path() -> PathBuf {
-    let mut path = config_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("crabflow_config.json");
-    path
+    let root = get_project_root();
+    let config_dir_name = var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
+    let config_file = var("CRABFLOW_CONFIG").unwrap_or_else(|_| "crabflow_config.json".to_string());
+    root.join(config_dir_name).join(config_file)
 }
 
 /// Write a file safely to the config directory
 pub fn write_file(filename: &str, data: &str) -> Result<(), String> {
-    let base: PathBuf = config_dir().ok_or("Could not resolve config directory")?;
-    let path = base.join(filename);
+    // Decide where to write based on filename or extension?
+    // leases.json -> db
+    // dns.json -> config
+    // others -> config
+    
+    let root = get_project_root();
+    let config_dir_name = var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
+    let db_dir_name = var("CRABFLOW_DB_DIR").unwrap_or_else(|_| "db".to_string());
+
+    let path = if filename == "leases.json" || filename == "system_stats.json" {
+        root.join(db_dir_name).join(filename)
+    } else {
+        root.join(config_dir_name).join(filename)
+    };
+
+    // Ensure directory exists
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+
     fs::write(&path, data).map_err(|e| format!("Failed to write file: {}", e))
 }
 
 /// Append data to a file safely
 pub fn append_file(filename: &str, data: &str) -> Result<(), String> {
-    let base: PathBuf = config_dir().ok_or("Could not resolve config directory")?;
-    let path = base.join(filename);
+    let root = get_project_root();
+    let config_dir_name = var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
+    let db_dir_name = var("CRABFLOW_DB_DIR").unwrap_or_else(|_| "db".to_string());
+
+    let path = if filename == "leases.json" || filename == "system_stats.json" {
+        root.join(db_dir_name).join(filename)
+    } else {
+        root.join(config_dir_name).join(filename)
+    };
+
+    // Ensure directory exists
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
 
     let mut content = fs::read_to_string(&path).unwrap_or_default();
     content.push_str(data);

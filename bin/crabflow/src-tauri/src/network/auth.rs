@@ -1,5 +1,6 @@
-// src-tauri/src/auth.rs
+// src-tauri/src/network/auth.rs
 use serde::{Deserialize, Serialize};
+// use crate::setup::wizard::load_setup;
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -14,9 +15,21 @@ pub struct Session {
     pub role: String, // "guest", "staff", "admin"
 }
 
+/*
 #[tauri::command]
 pub fn login(req: LoginRequest) -> Result<Session, String> {
-    // For now: simple hardcoded check (replace with DB or config later)
+    // Try to load config from setup
+    if let Ok(config) = load_setup() {
+        if req.username == config.admin_user && req.password == config.admin_pass {
+             return Ok(Session {
+                id: "sess-admin".into(),
+                user: req.username,
+                role: "admin".into(),
+            });
+        }
+    }
+
+    // Fallback / Hardcoded for dev (optional, maybe remove if strict)
     if req.username == "admin" && req.password == "secret" {
         Ok(Session {
             id: "sess-123".into(),
@@ -33,3 +46,4 @@ pub fn login(req: LoginRequest) -> Result<Session, String> {
         Err("Invalid credentials".into())
     }
 }
+*/

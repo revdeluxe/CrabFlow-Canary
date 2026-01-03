@@ -1,0 +1,74 @@
+@import '@fortawesome/fontawesome-free/css/all.min.css';
+@import 'admin-lte/dist/css/adminlte.min.css';
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f1f1; 
+}
+::-webkit-scrollbar-thumb {
+  background: #888; 
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555; 
+}
+
+/* Fix for 800x600 viewport constraint */
+body {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.content-wrapper {
+    height: calc(100vh - 57px);
+    overflow-y: auto;
+}
+
+/* Force Desktop Layout Behavior for 800x600 */
+body.sidebar-mini .wrapper .content-wrapper,
+body.sidebar-mini .wrapper .main-footer,
+body.sidebar-mini .wrapper .main-header {
+    margin-left: 250px !important;
+    transition: margin-left 0.3s ease-in-out;
+}
+
+body.sidebar-mini.sidebar-collapse .wrapper .content-wrapper,
+body.sidebar-mini.sidebar-collapse .wrapper .main-footer,
+body.sidebar-mini.sidebar-collapse .wrapper .main-header {
+    margin-left: 4.6rem !important;
+}
+
+body.sidebar-mini .wrapper .main-sidebar {
+    transform: translate(0, 0) !important;
+    width: 250px !important;
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    bottom: 0;
+}
+
+body.sidebar-mini.sidebar-collapse .wrapper .main-sidebar {
+    width: 4.6rem !important;
+}
+
+/* Hide/Show sidebar content based on collapse */
+body.sidebar-mini.sidebar-collapse .main-sidebar .brand-text,
+body.sidebar-mini.sidebar-collapse .main-sidebar .nav-link p,
+body.sidebar-mini.sidebar-collapse .main-sidebar .user-panel .info {
+    display: none !important;
+}
+
+/* Hover to expand sidebar */
+body.sidebar-mini.sidebar-collapse .main-sidebar:hover {
+    width: 250px !important;
+}
+
+body.sidebar-mini.sidebar-collapse .main-sidebar:hover .brand-text,
+body.sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-link p,
+body.sidebar-mini.sidebar-collapse .main-sidebar:hover .user-panel .info {
+    display: inline-block !important;
+}

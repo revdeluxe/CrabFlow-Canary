@@ -1,0 +1,22 @@
+{
+  "hostname": "Crabflow-Host",
+  "admin_email": "revchannel01@gmail.com",
+  "admin_user": "admin",
+  "admin_pass": "admin",
+  "telemetry": true,
+  "first_run": false,
+  "monitor_interval": 1000,
+  "dhcp": {
+    "enabled": true,
+    "captive_portal": true,
+    "range_start": "10.0.0.2",
+    "range_end": "10.0.0.255",
+    "subnet_mask": "255.255.255.0",
+    "gateway": "10.0.0.1",
+    "dns_servers": [
+      "8.8.8.8",
+      "8.8.4.4"
+    ],
+    "lease_time": 86400
+  }
+}
