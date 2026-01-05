@@ -6,6 +6,7 @@
   let user = {
     username: 'User',
     email: 'user@example.com',
+    nickname: '',
     role: 'User'
   }
   let history = []
@@ -24,6 +25,15 @@
     })
     return unsubscribe
   })
+
+  async function saveProfile() {
+    try {
+      await api.updateUserProfile(user.username, user.nickname, user.email)
+      alert("Profile updated successfully!")
+    } catch (e) {
+      alert("Failed to update profile: " + e)
+    }
+  }
 
   async function handleIdUpload(event) {
     const file = event.target.files[0];
@@ -102,7 +112,6 @@
 <section class="content">
   <div class="container-fluid">
     <div class="row">
-      
       <!-- Left Column: Profile Info (View Container) -->
       <div class="col-12">
         <div class="card card-primary card-outline">
@@ -143,10 +152,14 @@
           <div class="card-body">
             <div class="tab-content">
               <div class="active tab-pane" id="settings">
-                <form>
+                <form on:submit|preventDefault={saveProfile}>
                   <div class="form-group">
                     <label for="inputName">Username</label>
                     <input type="text" class="form-control" id="inputName" placeholder="Name" bind:value={user.username} readonly>
+                  </div>
+                  <div class="form-group">
+                    <label for="inputNickname">Nickname</label>
+                    <input type="text" class="form-control" id="inputNickname" placeholder="Nickname" bind:value={user.nickname}>
                   </div>
                   <div class="form-group">
                     <label for="inputEmail">Email</label>
@@ -174,43 +187,8 @@
         </div>
       </div>
 
-    </div>
-            <ul class="nav nav-pills">
-              <li class="nav-item"><a class="nav-link active" href="#settings" data-toggle="tab">Settings</a></li>
-            </ul>
-             <div class="card-tools">
-                <button type="button" class="btn btn-tool" title="Edit Information">
-                    <i class="fas fa-edit"></i>
-                </button>
-            </div>
-          </div>
-          <div class="card-body">
-            <div class="tab-content">
-              <div class="active tab-pane" id="settings">
-                <form class="form-horizontal">
-                  <div class="form-group row">
-                    <label for="inputName" class="col-sm-2 col-form-label">Username</label>
-                    <div class="col-sm-10">
-                      <input type="text" class="form-control" id="inputName" placeholder="Name" bind:value={user.username}>
-                    </div>
-                  </div>
-                  <div class="form-group row">
-                    <label for="inputEmail" class="col-sm-2 col-form-label">Email</label>
-                    <div class="col-sm-10">
-                      <input type="email" class="form-control" id="inputEmail" placeholder="Email" bind:value={user.email}>
-                    </div>
-                  </div>
-                  <div class="form-group row">
-                    <div class="offset-sm-2 col-sm-10">
-                      <button type="submit" class="btn btn-danger">Save Changes</button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-        </div>
-        
+      <!-- Login History -->
+      <div class="col-12">
         <div class="card">
           <div class="card-header">
             <h3 class="card-title">Login History</h3>
@@ -242,6 +220,7 @@
           </div>
         </div>
       </div>
+
     </div>
   </div>
 </section>

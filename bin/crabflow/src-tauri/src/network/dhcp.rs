@@ -5,7 +5,7 @@ use crate::sysmodules::{fetch, post, logging, config};
 use dotenv::var;
 use std::net::UdpSocket;
 use std::thread;
-use std::sync::{Arc, Mutex};
+// use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH, Duration};
 
@@ -88,13 +88,30 @@ pub fn start_dhcp_server() {
         return;
     }
 
+    // Load config to check if enabled and get bind address
+    let config = match config::load_setup_config() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            logging::log_error(&format!("Failed to load config for DHCP: {}", e));
+            return;
+        }
+    };
+
+    if !config.dhcp.enabled {
+        logging::log_info("DHCP Server is disabled in config. Skipping start.");
+        return;
+    }
+
     DHCP_RUNNING.store(true, Ordering::Relaxed);
 
-    thread::spawn(|| {
-        let socket = match UdpSocket::bind("0.0.0.0:67") {
+    thread::spawn(move || {
+        let bind_addr = config.dhcp.bind_address;
+        let bind_endpoint = format!("{}:67", bind_addr);
+
+        let socket = match UdpSocket::bind(&bind_endpoint) {
             Ok(s) => s,
             Err(e) => {
-                logging::log_error(&format!("Failed to bind DHCP server to port 67: {}", e));
+                logging::log_error(&format!("Failed to bind DHCP server to {}: {}", bind_endpoint, e));
                 DHCP_RUNNING.store(false, Ordering::Relaxed);
                 return;
             }
@@ -103,7 +120,7 @@ pub fn start_dhcp_server() {
         socket.set_broadcast(true).unwrap_or_else(|e| logging::log_error(&format!("Failed to set broadcast: {}", e)));
         socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap_or_else(|e| logging::log_error(&format!("Failed to set read timeout: {}", e)));
         
-        logging::log_info("DHCP Server started on port 67");
+        logging::log_info(&format!("DHCP Server started on {}", bind_endpoint));
 
         let mut buf = [0u8; 1500];
         while DHCP_RUNNING.load(Ordering::Relaxed) {
@@ -243,7 +260,7 @@ fn allocate_ip(mac: &str, hostname: &str, config: &config::DhcpConfig) -> Option
     None // Pool exhausted
 }
 
-fn send_dhcp_reply(socket: &UdpSocket, req: &[u8], xid: &[u8], yiaddr: &str, chaddr: &[u8], msg_type: u8, config: &config::DhcpConfig) {
+fn send_dhcp_reply(socket: &UdpSocket, _req: &[u8], xid: &[u8], yiaddr: &str, chaddr: &[u8], msg_type: u8, config: &config::DhcpConfig) {
     let mut packet = vec![0u8; 300];
     
     packet[0] = 2; // BootReply

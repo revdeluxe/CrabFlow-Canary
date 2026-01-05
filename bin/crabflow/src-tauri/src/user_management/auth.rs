@@ -107,6 +107,8 @@ pub fn register_user(store: State<UserStore>, username: String, password: String
 
     let new_user = User {
         username: username.clone(),
+        nickname: None,
+        email: None,
         password_hash: password, // Hash this in production!
         role: "user".to_string(),
         groups: vec![],

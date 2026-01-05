@@ -1,5 +1,29 @@
 import { invoke } from '@tauri-apps/api/core';
 
+const API_URL = "http://localhost:3030/api";
+
+async function request(endpoint, method = "GET", body = null) {
+    try {
+        const options = {
+            method,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        };
+        if (body) {
+            options.body = JSON.stringify(body);
+        }
+        const response = await fetch(`${API_URL}${endpoint}`, options);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (e) {
+        console.error(`Fetch failed for ${endpoint}, falling back to invoke if possible`, e);
+        throw e;
+    }
+}
+
 /**
  * @typedef {Object} SetupConfig
  * @property {string} hostname
@@ -37,13 +61,26 @@ export const api = {
   listUsers: async () => await invoke('list_users'),
   updateUserStatus: async (username, active, approved) => await invoke('update_user_status', { username, active, approved }),
   updateUserGroups: async (username, groups) => await invoke('update_user_groups', { username, groups }),
+  updateUserProfile: async (username, nickname, email) => await invoke('update_user_profile', { username, nickname, email }),
   getUserSettings: async () => await invoke('get_user_settings'),
   setUserSettings: async (settings) => await invoke('set_user_settings', { settings }),
+  
+  // Group Management
+  listGroups: async () => await invoke('list_groups'),
+  addGroup: async (name, description, permissions) => await invoke('add_group', { name, description, permissions }),
+  updateGroup: async (name, description, permissions) => await invoke('update_group', { name, description, permissions }),
+  deleteGroup: async (name) => await invoke('delete_group', { name }),
+  listPermissions: async () => await invoke('list_permissions'),
 
   // Network
-  listLeases: async () => await invoke('list_leases'),
-  listRecords: async () => await invoke('list_records'),
-  getSystemStatus: async () => await invoke('get_system_status'),
+  listLeases: async () => await request('/dhcp/leases'),
+  listRecords: async () => await request('/dns/records'),
+  getQueryLogs: async (limit) => await invoke('get_query_logs', { limit }),
+  getSystemStatus: async () => await request('/system/status'),
+  getTrafficSummary: async () => await invoke('get_traffic_summary'),
+  listInterfaces: async () => await invoke('list_interfaces'),
+  listDevices: async () => await invoke('list_devices'),
+  updateUpstreamInterface: async (ip) => await invoke('update_upstream_interface', { ip }),
   
   // Hotspot
   createHotspot: async (ssid, key) => await invoke('create_hotspot', { ssid, key }),
@@ -54,9 +91,15 @@ export const api = {
   getUserHistory: async (username) => await invoke('get_user_history', { username }),
   uploadId: async (username, filePath) => await invoke('upload_id', { username, filePath }),
   setCaptivePortal: async (enabled) => await invoke('set_captive_portal', { enabled }),
+  getPortalTemplate: async () => await invoke('get_portal_template'),
+  savePortalTemplate: async (content) => await invoke('save_portal_template', { content }),
 
   // Logs
-  getLogs: async (limit) => await invoke('get_logs', { limit }),
+  getLogs: async (limit) => await request('/logs'), 
+  loadLoggingConfig: async () => await invoke('load_logging_config'),
+  saveLoggingConfig: async (config) => await invoke('save_logging_config', { config }),
+  reloadLoggingConfig: async () => await invoke('reload_logging_config'),
+  clearLogs: async () => await invoke('clear_logs'),
 
   // Power
   shutdownSystem: async () => await invoke('shutdown_system'),

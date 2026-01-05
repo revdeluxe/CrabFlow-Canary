@@ -1,13 +1,25 @@
-use crate::sysmodules::{logging, post, fetch};
+use crate::sysmodules::{logging, post, fetch, config};
 use crate::network::{dhcp, dns};
 use dotenv::var;
-use std::thread;
+// use std::thread;
 
 pub fn initialize_networking() {
     logging::log_info("Initializing networking components...");
 
     let leases_file = var("CRABFLOW_DHCP_CONFIG").unwrap_or_else(|_| "leases.json".to_string());
     let dns_file = var("CRABFLOW_DNS_CONFIG").unwrap_or_else(|_| "dns.json".to_string());
+
+    // Load main configuration to set upstream interface
+    match config::load_setup_config() {
+        Ok(cfg) => {
+            let upstream = cfg.dhcp.upstream_interface;
+            logging::log_info(&format!("Setting DNS upstream interface to: {}", upstream));
+            dns::set_upstream_interface(upstream);
+        },
+        Err(e) => {
+            logging::log_error(&format!("Failed to load setup config: {}", e));
+        }
+    }
 
     // Initialize DHCP
     match fetch::read_file(&leases_file) {

@@ -5,6 +5,7 @@
   let user = {
     username: 'Admin',
     email: 'admin@example.com',
+    nickname: 'Administrator',
     role: 'Administrator'
   }
   let history = []
@@ -15,10 +16,20 @@
     try {
       const config = await api.loadSetup()
       if (config) {
+        // Fallback to config if user DB doesn't have it yet, but ideally we fetch from DB
         user.username = config.admin_user || 'Admin'
-        user.email = config.admin_email || 'admin@example.com'
       }
       
+      // Fetch actual user data from DB
+      const users = await api.listUsers()
+      const dbUser = users.find(u => u.username === user.username)
+      if (dbUser) {
+        user = { ...user, ...dbUser }
+        // Ensure defaults if missing in DB
+        if (!user.email && config) user.email = config.admin_email
+        if (!user.nickname) user.nickname = 'Administrator'
+      }
+
       try {
           history = await api.getUserHistory(user.username)
       } catch (err) {
@@ -30,6 +41,15 @@
       loading = false
     }
   })
+
+  async function saveProfile() {
+    try {
+      await api.updateUserProfile(user.username, user.nickname, user.email)
+      alert("Profile updated successfully!")
+    } catch (e) {
+      alert("Failed to update profile: " + e)
+    }
+  }
 
   async function handleIdUpload(event) {
     const file = event.target.files[0];
@@ -149,10 +169,14 @@
           <div class="card-body">
             <div class="tab-content">
               <div class="active tab-pane" id="settings">
-                <form>
+                <form on:submit|preventDefault={saveProfile}>
                   <div class="form-group">
                     <label for="inputName">Username</label>
-                    <input type="text" class="form-control" id="inputName" placeholder="Name" bind:value={user.username}>
+                    <input type="text" class="form-control" id="inputName" placeholder="Name" bind:value={user.username} readonly>
+                  </div>
+                  <div class="form-group">
+                    <label for="inputNickname">Nickname</label>
+                    <input type="text" class="form-control" id="inputNickname" placeholder="Nickname" bind:value={user.nickname}>
                   </div>
                   <div class="form-group">
                     <label for="inputEmail">Email</label>

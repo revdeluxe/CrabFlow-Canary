@@ -1,6 +1,7 @@
 <script>
 import { goto } from '$app/navigation'
 import { api } from '$lib/tauri'
+import { onMount } from 'svelte'
 
 let step = 1
 
@@ -10,6 +11,23 @@ let adminUser = ""
 let adminPass = ""
 let telemetry = false
 let loading = false
+let interfaces = []
+let bindAddress = "0.0.0.0"
+let upstreamInterface = "0.0.0.0"
+
+onMount(async () => {
+    try {
+        interfaces = await api.listInterfaces()
+        // Auto-select primary interface for upstream
+        const primary = interfaces.find(i => i.is_primary);
+        if (primary) {
+            const ip = primary.ips.find(ip => ip.includes('.'));
+            if (ip) upstreamInterface = ip;
+        }
+    } catch (e) {
+        console.error("Failed to list interfaces", e)
+    }
+})
 
 function next() {
   step += 1
@@ -24,8 +42,33 @@ async function finish() {
       admin_user: adminUser,
       admin_pass: adminPass,
       telemetry,
-      first_run: false
+      first_run: false,
+      dhcp: {
+          enabled: false,
+          captive_portal: false,
+          bind_address: bindAddress,
+          upstream_interface: upstreamInterface,
+          range_start: "192.168.1.100",
+          range_end: "192.168.1.200",
+          subnet_mask: "255.255.255.0",
+          gateway: "192.168.1.1",
+          dns_servers: ["8.8.8.8", "8.8.4.4"],
+          lease_time: 86400
+      },
+      hotspot: {
+          enabled: false,
+          ssid: "CrabFlow-Hotspot",
+          password: "password123",
+          interface: "Wi-Fi"
+      }
     })
+    // Apply upstream interface immediately
+    try {
+        await api.updateUpstreamInterface(upstreamInterface);
+    } catch(err) {
+        console.warn("Failed to apply upstream interface immediately:", err);
+    }
+    
     goto("/admin/dashboard")
   } catch (e) {
     console.error("Setup failed:", e)
@@ -72,6 +115,39 @@ async function finish() {
                             <span class="fas fa-envelope"></span>
                         </div>
                     </div>
+                </div>
+                <div class="form-group mb-3">
+                    <label>Service Interface (LAN/Hotspot)</label>
+                    <select class="form-control" bind:value={bindAddress}>
+                        <option value="0.0.0.0">All Interfaces (0.0.0.0)</option>
+                        {#each interfaces as iface}
+                            {#each iface.ips as ip}
+                                {#if ip.includes('.')}
+                                    <option value={ip}>
+                                        {iface.name} ({ip})
+                                    </option>
+                                {/if}
+                            {/each}
+                        {/each}
+                    </select>
+                    <small class="form-text text-muted">Interface to serve DHCP/DNS on (e.g. Hotspot adapter).</small>
+                </div>
+
+                <div class="form-group mb-3">
+                    <label>Upstream Interface (Internet)</label>
+                    <select class="form-control" bind:value={upstreamInterface}>
+                        <option value="0.0.0.0">Auto / Default Route</option>
+                        {#each interfaces as iface}
+                            {#each iface.ips as ip}
+                                {#if ip.includes('.')}
+                                    <option value={ip}>
+                                        {iface.name} ({ip}) {iface.is_primary ? ' - Internet Active' : ''}
+                                    </option>
+                                {/if}
+                            {/each}
+                        {/each}
+                    </select>
+                    <small class="form-text text-muted">Interface used to forward DNS queries to the internet.</small>
                 </div>
                 <div class="row">
                     <div class="col-4">

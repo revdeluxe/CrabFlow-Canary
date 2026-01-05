@@ -64,6 +64,9 @@ pub fn append_file(filename: &str, data: &str) -> Result<(), String> {
 #[tauri::command]
 pub fn post_setup(config: SetupConfig) -> Result<(), String> {
     let path = config_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
     let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
     fs::write(path, json).map_err(|e| e.to_string())
 }

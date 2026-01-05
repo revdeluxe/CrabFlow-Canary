@@ -6,6 +6,15 @@
 use crate::network::dhcp;
 use crate::network::dns;
 use crate::sysmodules::{logging, fetch, post};
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Device {
+    pub mac: String,
+    pub ip: String,
+    pub hostname: String,
+    pub status: String,
+}
 
 // Re-export structs for frontend use
 pub use dhcp::{Lease, LeaseInput};
@@ -44,6 +53,11 @@ pub fn remove_record(name: String, rtype: String) -> Result<(), String> {
     dns::remove_record(name, rtype)
 }
 
+#[tauri::command]
+pub fn update_upstream_interface(ip: String) {
+    dns::set_upstream_interface(ip);
+}
+
 /// Logging commands
 #[tauri::command]
 pub fn log_action(actor: String, action: String, target: String) {
@@ -59,4 +73,17 @@ pub fn fetch_config(path: String) -> Result<String, String> {
 #[tauri::command]
 pub fn save_config(path: String, data: String) -> Result<(), String> {
     post::write_file(&path, &data)
+}
+
+#[tauri::command]
+pub fn list_devices() -> Vec<Device> {
+    // Mock implementation for now
+    vec![
+        Device {
+            mac: "00:11:22:33:44:55".to_string(),
+            ip: "192.168.1.10".to_string(),
+            hostname: "Device-1".to_string(),
+            status: "Online".to_string(),
+        }
+    ]
 }

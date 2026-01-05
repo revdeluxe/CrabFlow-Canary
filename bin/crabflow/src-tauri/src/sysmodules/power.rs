@@ -1,5 +1,5 @@
 use std::process::Command;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use crate::network::init::{shutdown_networking, initialize_networking};
 use crate::sysmodules::logging;
 
@@ -53,8 +53,7 @@ pub fn restart_networking() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn restart_application(app: AppHandle) -> Result<(), String> {
+pub fn restart_application(app: AppHandle) {
     logging::log_info("Restarting application...");
     app.restart();
-    Ok(())
 }

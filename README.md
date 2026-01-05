@@ -1,39 +1,64 @@
 # CrabFlow Canary 🦀
 
-CrabFlow Canary is a network monitoring and management tool built with Rust, Rocket, and Tauri. It provides a web-based UI to monitor system stats, network traffic, and manage DHCP leases.
+CrabFlow Canary is an advanced SDN (Software Defined Networking) controller and Captive Portal solution built with Rust and Tauri. It turns any Windows device into a powerful network appliance capable of managing users, bandwidth, and security.
 
 ## Features 🚀
 
-*   **Dashboard**: A comprehensive dashboard that displays:
-    *   System information (OS, CPU, Memory) 💻.
-    *   Live network traffic graph with per-interface selection and adjustable update interval 📈.
-    *   System logs 📝.
-*   **Device Manager**: A page to manage network devices, starting with a display of active DHCP leases ⚙️.
-*   **Settings Page**: A page to configure the application settings ⚙️.
-*   **Theme Toggle**: Switch between light and dark themes 🎨.
+*   **Network Management**:
+    *   **DHCP Server**: Built-in DHCP server with custom ranges, static leases, and captive portal integration.
+    *   **DNS Server**: Custom DNS forwarder with support for blacklisting, local records, and split-interface routing (LAN vs WAN).
+    *   **Upstream Interface Selection**: Explicitly route user traffic through a specific internet connection while serving clients on a local hotspot.
+*   **Captive Portal**:
+    *   **Force authentication** for new users.
+    *   **Customizable portal pages** with a built-in editor.
+    *   User bandwidth and session tracking.
+*   **User Management**:
+    *   Creating and managing users and groups.
+    *   Role-based access control (RBAC).
+*   **Monitoring**:
+    *   Real-time system stats (CPU, Memory).
+    *   Live network traffic graphs.
+    *   DNS Query logs and System logs.
+*   **Modern UI**:
+    *   Built with SvelteKit and AdminLTE for a responsive, professional dashboard.
+    *   Dark mode support.
 
 ## Technologies Used 🛠️
 
 *   **Backend**:
-    *   [Rust](https://www.rust-lang.org/) 🦀
-    *   [Rocket](https://rocket.rs/) (web framework) 🚀
-    *   [Tera](https://keats.github.io/tera/) (templating engine) 📝
-    *   [sysinfo](https://crates.io/crates/sysinfo) (for system information) 💻
+    *   [Rust](https://www.rust-lang.org/) 🦀 - Core logic, Networking stack (DHCP/DNS/Sockets).
+    *   [Tauri](https://tauri.app/) 🖼️ - Desktop application framework.
 *   **Frontend**:
-    *   HTML5, CSS3, JavaScript
-    *   [Chart.js](https://www.chartjs.org/) (for the traffic graph) 📊
-*   **Desktop App**:
-    *   [Tauri](https://tauri.app/) 🖼️
+    *   [SvelteKit](https://kit.svelte.dev/) - UI Framework.
+    *   [Chart.js](https://www.chartjs.org/) - Traffic visualization.
 
-## How to Run
+## Getting Started
 
-1.  Make sure you have Rust and the Tauri prerequisites installed.
-2.  Clone the repository.
-3.  Run the application in development mode:
+1.  **Prerequisites**:
+    *   Node.js & npm/pnpm
+    *   Rust & Cargo
+
+2.  **Installation**:
+    ```bash
+    git clone https://github.com/yourusername/CrabFlow-Canary.git
+    cd CrabFlow-Canary/bin/crabflow
+    npm install
+    ```
+
+3.  **Development**:
     ```bash
     cargo tauri dev
     ```
-4.  Open your browser and navigate to `http://localhost:8000` (or the configured port).
+
+4.  **Building**:
+    ```bash
+    cargo tauri build
+    ```
+
+## Configuration
+
+The application can be configured via the **Setup Wizard** on first run, or through the **Settings** page in the dashboard.
+Configuration files are stored in `bin/crabflow/config/`.
 
 ## License
 

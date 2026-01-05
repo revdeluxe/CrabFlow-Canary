@@ -14,40 +14,71 @@
     dhcp: {
       enabled: false,
       captive_portal: false,
+      bind_address: "0.0.0.0",
       range_start: "192.168.1.100",
       range_end: "192.168.1.200",
       subnet_mask: "255.255.255.0",
       gateway: "192.168.1.1",
       dns_servers: ["8.8.8.8", "8.8.4.4"],
       lease_time: 86400
+    },
+    hotspot: {
+      enabled: false,
+      ssid: "CrabFlow-Hotspot",
+      password: "password123",
+      interface: "Wi-Fi"
     }
   }
   let userSettings = {
     auto_approve_new_users: false
   }
+  let loggingConfig = {
+    level: "INFO",
+    file: "crabflow.log"
+  }
+  let interfaces = []
   let showModal = false
   let showRiskModal = false
   let loading = true
 
   onMount(async () => {
     try {
-      const [setup, userSet] = await Promise.all([
+      const [setup, userSet, logConf, ifaces] = await Promise.all([
         api.loadSetup(),
-        api.getUserSettings()
+        api.getUserSettings(),
+        api.loadLoggingConfig(),
+        api.listInterfaces()
       ])
       setupConfig = setup
+      loggingConfig = logConf
+      interfaces = ifaces || []
       
       // Ensure dhcp object exists if it wasn't in the file
       if (!setupConfig.dhcp) {
         setupConfig.dhcp = {
           enabled: false,
           captive_portal: false,
+          bind_address: "0.0.0.0",
+          upstream_interface: "0.0.0.0",
           range_start: "192.168.1.100",
           range_end: "192.168.1.200",
           subnet_mask: "255.255.255.0",
           gateway: "192.168.1.1",
           dns_servers: ["8.8.8.8", "8.8.4.4"],
           lease_time: 86400
+        }
+      } else {
+          if (!setupConfig.dhcp.bind_address) setupConfig.dhcp.bind_address = "0.0.0.0";
+          if (!setupConfig.dhcp.upstream_interface) setupConfig.dhcp.upstream_interface = "0.0.0.0";
+      }
+
+      // Ensure hotspot object exists
+      if (!setupConfig.hotspot) {
+        setupConfig.hotspot = {
+          enabled: false,
+          ssid: "CrabFlow-Hotspot",
+          password: "password123",
+          interface: "Wi-Fi"
         }
       }
 
@@ -63,6 +94,9 @@
     try {
       await api.saveSetup(setupConfig)
       await api.setUserSettings(userSettings)
+      await api.saveLoggingConfig(loggingConfig)
+      await api.reloadLoggingConfig()
+      await api.updateUpstreamInterface(setupConfig.dhcp.upstream_interface)
       alert("Settings saved successfully!")
     } catch (e) {
       console.error("Failed to save settings:", e)
@@ -190,6 +224,29 @@
 
             <hr>
 
+            <h5 class="text-primary"><i class="fas fa-list-alt mr-2"></i> Logging</h5>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label>Log Level</label>
+                  <select class="form-control" bind:value={loggingConfig.level}>
+                    <option value="DEBUG">DEBUG (Verbose)</option>
+                    <option value="INFO">INFO</option>
+                    <option value="WARN">WARN</option>
+                    <option value="ERROR">ERROR</option>
+                  </select>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label>Log File Name</label>
+                  <input type="text" class="form-control" bind:value={loggingConfig.file} />
+                </div>
+              </div>
+            </div>
+
+            <hr>
+
             <h5 class="text-primary" id="network-settings"><i class="fas fa-network-wired mr-2"></i> Network (DHCP)</h5>
             <div class="row">
               <div class="col-md-12">
@@ -204,6 +261,45 @@
                     <input type="checkbox" class="custom-control-input" id="cportalSwitch" bind:checked={setupConfig.dhcp.captive_portal}>
                     <label class="custom-control-label" for="cportalSwitch">Enable Captive Portal (Forces DNS to Gateway)</label>
                   </div>
+                  <div class="mt-2">
+                    <a href="/admin/portal-editor" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-edit"></i> Customize Portal Page
+                    </a>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-12">
+                <div class="form-group">
+                  <label>Service Interface (LAN/Hotspot)</label>
+                  <select class="form-control" bind:value={setupConfig.dhcp.bind_address}>
+                    <option value="0.0.0.0">All Interfaces (0.0.0.0)</option>
+                    {#each interfaces as iface}
+                        {#each iface.ips as ip}
+                            {#if ip.includes('.')} <!-- IPv4 only for now -->
+                                <option value={ip}>
+                                    {iface.name} ({ip})
+                                </option>
+                            {/if}
+                        {/each}
+                    {/each}
+                  </select>
+                  <small class="form-text text-muted">Interface to serve DHCP/DNS on (e.g. Hotspot adapter).</small>
+                </div>
+                <div class="form-group">
+                  <label>Upstream Interface (Internet)</label>
+                  <select class="form-control" bind:value={setupConfig.dhcp.upstream_interface}>
+                    <option value="0.0.0.0">Auto / Default Route</option>
+                    {#each interfaces as iface}
+                        {#each iface.ips as ip}
+                            {#if ip.includes('.')} <!-- IPv4 only for now -->
+                                <option value={ip}>
+                                    {iface.name} ({ip}) {iface.is_primary ? ' - Internet Active' : ''}
+                                </option>
+                            {/if}
+                        {/each}
+                    {/each}
+                  </select>
+                  <small class="form-text text-muted">Interface used to forward DNS queries to the internet.</small>
                 </div>
               </div>
               <div class="col-md-6">
@@ -243,6 +339,31 @@
                 <div class="form-group">
                   <label>Lease Time (s)</label>
                   <input type="number" class="form-control" bind:value={setupConfig.dhcp.lease_time} />
+                </div>
+              </div>
+            </div>
+
+            <hr>
+
+            <h5 class="text-primary"><i class="fas fa-wifi mr-2"></i> Hotspot Settings</h5>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label>SSID (Network Name)</label>
+                  <input type="text" class="form-control" bind:value={setupConfig.hotspot.ssid} />
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label>Password (Min 8 chars)</label>
+                  <input type="text" class="form-control" bind:value={setupConfig.hotspot.password} />
+                </div>
+              </div>
+              <div class="col-md-12">
+                <div class="form-group">
+                  <label>Interface Name (Reference Only)</label>
+                  <input type="text" class="form-control" bind:value={setupConfig.hotspot.interface} placeholder="Wi-Fi" />
+                  <small class="form-text text-muted">Specify which physical interface to use for sharing internet (requires manual ICS configuration or future update).</small>
                 </div>
               </div>
             </div>

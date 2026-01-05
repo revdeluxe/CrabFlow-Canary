@@ -20,7 +20,9 @@ pub struct LoggingConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DhcpConfig {
     pub enabled: bool,
-    pub captive_portal: bool, // New field
+    pub captive_portal: bool,
+    pub bind_address: String, // Interface IP to bind to (e.g. 0.0.0.0 or 192.168.137.1)
+    pub upstream_interface: String, // New: Interface IP to use for outbound forwarding
     pub range_start: String,
     pub range_end: String,
     pub subnet_mask: String,
@@ -34,12 +36,33 @@ impl Default for DhcpConfig {
         Self {
             enabled: false,
             captive_portal: false,
+            bind_address: "0.0.0.0".into(),
+            upstream_interface: "0.0.0.0".into(),
             range_start: "192.168.1.100".into(),
             range_end: "192.168.1.200".into(),
             subnet_mask: "255.255.255.0".into(),
             gateway: "192.168.1.1".into(),
             dns_servers: vec!["8.8.8.8".into(), "8.8.4.4".into()],
             lease_time: 86400,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HotspotConfig {
+    pub enabled: bool,
+    pub ssid: String,
+    pub password: String,
+    pub interface: String, // e.g. "Wi-Fi" or "Ethernet 2"
+}
+
+impl Default for HotspotConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            ssid: "CrabFlow-Hotspot".into(),
+            password: "password123".into(),
+            interface: "Wi-Fi".into(),
         }
     }
 }
@@ -56,6 +79,8 @@ pub struct SetupConfig {
     pub monitor_interval: u64,
     #[serde(default)]
     pub dhcp: DhcpConfig,
+    #[serde(default)]
+    pub hotspot: HotspotConfig,
 }
 
 fn default_monitor_interval() -> u64 {
@@ -73,9 +98,31 @@ pub fn load_logging_config() -> Result<LoggingConfig, String> {
     let config_dir = env::var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
     let default_path = format!("{}/logging.conf.json", config_dir);
     let path = resolve_path("CRABFLOW_LOG_CONFIG", &default_path);
+    
+    if !path.exists() {
+        return Ok(LoggingConfig {
+            level: "INFO".to_string(),
+            file: "crabflow.log".to_string(),
+        });
+    }
+
     let data = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let config: LoggingConfig = serde_json::from_str(&data).map_err(|e| e.to_string())?;
     Ok(config)
+}
+
+#[tauri::command]
+pub fn save_logging_config(config: LoggingConfig) -> Result<(), String> {
+    let config_dir = env::var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
+    let default_path = format!("{}/logging.conf.json", config_dir);
+    let path = resolve_path("CRABFLOW_LOG_CONFIG", &default_path);
+    
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -83,6 +130,21 @@ pub fn load_setup_config() -> Result<SetupConfig, String> {
     let config_dir = env::var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
     let default_path = format!("{}/setup.conf", config_dir);
     let path = resolve_path("CRABFLOW_SETUP_CONFIG", &default_path);
+    
+    if !path.exists() {
+        return Ok(SetupConfig {
+            hostname: "".into(),
+            admin_email: "".into(),
+            admin_user: "".into(),
+            admin_pass: "".into(),
+            telemetry: false,
+            first_run: true,
+            monitor_interval: 5000,
+            dhcp: DhcpConfig::default(),
+            hotspot: HotspotConfig::default(),
+        });
+    }
+
     let data = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let config: SetupConfig = serde_json::from_str(&data).map_err(|e| e.to_string())?;
     Ok(config)
@@ -93,6 +155,11 @@ pub fn save_setup_config(config: SetupConfig) -> Result<(), String> {
     let config_dir = env::var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
     let default_path = format!("{}/setup.conf", config_dir);
     let path = resolve_path("CRABFLOW_SETUP_CONFIG", &default_path);
+    
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
     let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
     fs::write(path, json).map_err(|e| e.to_string())
 }
@@ -109,7 +176,9 @@ pub fn reset_setup_config() -> Result<(), String> {
         first_run: true,
         monitor_interval: 5000,
         dhcp: DhcpConfig::default(),
+        hotspot: HotspotConfig::default(),
     };
     let json = serde_json::to_string_pretty(&default).map_err(|e| e.to_string())?;
     fs::write(path, json).map_err(|e| e.to_string())
+
 }

@@ -1,14 +1,35 @@
 // src-tauri/src/dns.rs
 
 use serde::{Serialize, Deserialize};
-use crate::sysmodules::{fetch, post, logging, config};
+use crate::sysmodules::{fetch, post, logging};
 use dotenv::var;
 use std::net::UdpSocket;
 use std::thread;
 use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, RwLock};
+use lazy_static::lazy_static;
+use std::collections::{HashSet, VecDeque};
 
 static DNS_RUNNING: AtomicBool = AtomicBool::new(false);
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DnsQueryLog {
+    pub timestamp: u64,
+    pub client_ip: String,
+    pub domain: String,
+    pub query_type: String,
+    pub status: String, // "Allowed", "Blocked"
+}
+
+lazy_static! {
+    static ref QUERY_LOG: Mutex<VecDeque<DnsQueryLog>> = Mutex::new(VecDeque::new());
+    static ref BLACKLIST_CACHE: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
+    static ref RECORDS_CACHE: RwLock<Vec<DnsRecord>> = RwLock::new(Vec::new());
+    // Default upstream, can be made configurable later
+    static ref UPSTREAM_DNS: RwLock<Vec<String>> = RwLock::new(vec!["1.1.1.1:53".to_string(), "8.8.8.8:53".to_string()]);
+    static ref UPSTREAM_INTERFACE: RwLock<String> = RwLock::new("0.0.0.0".to_string());
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DnsRecord {
@@ -30,17 +51,43 @@ fn get_dns_file() -> String {
     var("CRABFLOW_DNS_CONFIG").unwrap_or_else(|_| "dns.json".to_string())
 }
 
+/// Initialize caches from disk
+pub fn init_dns_caches() {
+    // Load Blacklist
+    match fetch::read_file(&get_blacklist_file()) {
+        Ok(data) => {
+            let list: Vec<String> = serde_json::from_str(&data).unwrap_or_default();
+            let mut cache = BLACKLIST_CACHE.write().unwrap();
+            *cache = list.into_iter().collect();
+        },
+        Err(_) => {}
+    }
+
+    // Load Records
+    match fetch::read_file(&get_dns_file()) {
+        Ok(data) => {
+            let list: Vec<DnsRecord> = serde_json::from_str(&data).unwrap_or_default();
+            let mut cache = RECORDS_CACHE.write().unwrap();
+            *cache = list;
+        },
+        Err(_) => {}
+    }
+    logging::log_info("DNS caches initialized");
+}
+
+pub fn set_upstream_interface(ip: String) {
+    let mut iface = UPSTREAM_INTERFACE.write().unwrap();
+    *iface = ip;
+}
+
 /// List all DNS records
 pub fn list_records() -> Vec<DnsRecord> {
-    match fetch::read_file(&get_dns_file()) {
-        Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
-        Err(_) => vec![],
-    }
+    RECORDS_CACHE.read().unwrap().clone()
 }
 
 /// Add a DNS record
 pub fn add_record(input: DnsRecordInput) -> Result<(), String> {
-    let mut records = list_records();
+    let mut records = list_records(); // Get current copy
     let name_for_log = input.name.clone();
     records.push(DnsRecord {
         name: input.name,
@@ -49,10 +96,37 @@ pub fn add_record(input: DnsRecordInput) -> Result<(), String> {
         ttl: input.ttl,
     });
 
+    // Update Cache
+    {
+        let mut cache = RECORDS_CACHE.write().unwrap();
+        *cache = records.clone();
+    }
+
     let serialized = serde_json::to_string_pretty(&records).map_err(|e| e.to_string())?;
     post::write_file(&get_dns_file(), &serialized)?;
     logging::log_event("system".into(), "add_record".into(), name_for_log);
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_query_logs(limit: usize) -> Vec<DnsQueryLog> {
+    let logs = QUERY_LOG.lock().unwrap();
+    logs.iter().rev().take(limit).cloned().collect()
+}
+
+fn log_query(client_ip: String, domain: String, query_type: String, status: String) {
+    let mut logs = QUERY_LOG.lock().unwrap();
+    logs.push_back(DnsQueryLog {
+        timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+        client_ip,
+        domain,
+        query_type,
+        status,
+    });
+    // Keep log size manageable
+    if logs.len() > 10000 {
+        logs.pop_front();
+    }
 }
 
 // --- DNS Server Implementation ---
@@ -69,6 +143,9 @@ pub fn start_dns_server() {
         logging::log_info("DNS Server is already running.");
         return;
     }
+
+    // Initialize caches before starting
+    init_dns_caches();
 
     DNS_RUNNING.store(true, Ordering::Relaxed);
 
@@ -94,7 +171,8 @@ pub fn start_dns_server() {
                     // ID (2), Flags (2). Flags 0x0100 (Standard Query)
                     // We just respond to everything with a basic handler for now.
                     
-                    if let Some(response) = handle_dns_query(query) {
+                    if let Some((response, domain, status)) = handle_dns_query(query) {
+                        log_query(src.ip().to_string(), domain, "A".to_string(), status);
                         let _ = socket.send_to(&response, src);
                     }
                 }
@@ -109,27 +187,51 @@ pub fn start_dns_server() {
     });
 }
 
-fn handle_dns_query(query: &[u8]) -> Option<Vec<u8>> {
+fn forward_dns_query(query: &[u8]) -> Option<Vec<u8>> {
+    let upstreams = UPSTREAM_DNS.read().unwrap();
+    let bind_ip = UPSTREAM_INTERFACE.read().unwrap();
+    let bind_addr = format!("{}:0", bind_ip);
+
+    for upstream in upstreams.iter() {
+        match UdpSocket::bind(&bind_addr) {
+            Ok(socket) => {
+                socket.set_read_timeout(Some(Duration::from_secs(2))).ok();
+                if socket.send_to(query, upstream).is_ok() {
+                    let mut buf = [0u8; 512];
+                    if let Ok((amt, _)) = socket.recv_from(&mut buf) {
+                        return Some(buf[..amt].to_vec());
+                    }
+                }
+            },
+            Err(e) => {
+                logging::log_error(&format!("Failed to bind forwarder to {}: {}", bind_addr, e));
+                continue;
+            },
+        }
+    }
+    None
+}
+
+fn handle_dns_query(query: &[u8]) -> Option<(Vec<u8>, String, String)> {
     if query.len() < 12 { return None; }
 
     // Parse Header
     let id = &query[0..2];
-    let flags = &query[2..4];
+    let _flags = &query[2..4];
     let qdcount = u16::from_be_bytes([query[4], query[5]]);
     
     // Only handle single question for simplicity
     if qdcount != 1 { return None; }
 
-    // Parse Question Name
+    // Parse Question Section to get Name
     let mut pos = 12;
     let mut domain_parts = Vec::new();
-    
     loop {
         if pos >= query.len() { return None; }
         let len = query[pos] as usize;
-        if len == 0 {
+        if len == 0 { 
             pos += 1;
-            break;
+            break; 
         }
         pos += 1;
         if pos + len > query.len() { return None; }
@@ -138,45 +240,163 @@ fn handle_dns_query(query: &[u8]) -> Option<Vec<u8>> {
         }
         pos += len;
     }
-    
-    let domain = domain_parts.join(".");
-    
-    // Type and Class
-    if pos + 4 > query.len() { return None; }
-    let qtype = u16::from_be_bytes([query[pos], query[pos+1]]);
-    let qclass = u16::from_be_bytes([query[pos+2], query[pos+3]]);
-    
-    // Only handle A records (Type 1) and IN Class (1)
-    if qtype != 1 || qclass != 1 { 
-        // TODO: Forward or ignore? For now, ignore.
-        return None; 
+    let domain_name = domain_parts.join(".");
+
+    // Skip QTYPE and QCLASS
+    pos += 4;
+
+    // Check Blacklist (Cache)
+    let is_blocked = {
+        let cache = BLACKLIST_CACHE.read().unwrap();
+        cache.contains(&domain_name)
+    };
+
+    // Check records (Cache)
+    let records = RECORDS_CACHE.read().unwrap();
+    let answer = records.iter().find(|r| r.name == domain_name && r.rtype == "A");
+
+    // If not blocked and not local, forward
+    if !is_blocked && answer.is_none() {
+        if let Some(response) = forward_dns_query(query) {
+            return Some((response, domain_name, "Forwarded".to_string()));
+        }
+        // If forwarding fails, fall through to NXDOMAIN
     }
 
-    // Lookup Logic
-    // 1. Check local records
-    // 2. Check Captive Portal status (Mocked for now: if domain is "captive.portal", return local IP)
-    // 3. Forward (Not implemented yet, just return NXDOMAIN or specific IP)
-
-    let records = list_records();
-    let answer_ip = records.iter().find(|r| r.name == domain && r.rtype == "A").map(|r| r.value.clone());
+    let mut response = Vec::new();
+    response.extend_from_slice(id); // ID
     
-    // Mock Captive Portal Redirection
-    // If we don't know the domain, and we are in "Strict" mode, we might return our own IP.
-    // For now, let's just return a dummy IP if found, or nothing (timeout) if not found.
-    // Or better: Forward to 8.8.8.8?
-    // Since we can't easily forward without a full client, let's just serve local records.
-    
-    if let Some(ip_str) = answer_ip {
-        return Some(build_dns_response(id, query, &ip_str));
-    }
-    
-    // Fallback: If domain is "connectivitycheck.gstatic.com" or similar, return our IP for portal testing
-    if domain.contains("connectivitycheck") || domain.contains("msftconnecttest") {
-         // Return Gateway IP (Hardcoded for now, should fetch from config)
-         return Some(build_dns_response(id, query, "10.0.0.1"));
+    if is_blocked {
+        response.extend_from_slice(&[0x81, 0x80]); // Standard Response, No Error
+    } else if let Some(_rec) = answer {
+        // Standard Response, No Error
+        response.extend_from_slice(&[0x81, 0x80]); // Flags: QR=1, AA=0, TC=0, RD=1, RA=1, Z=0, RCODE=0
+    } else {
+        // NXDOMAIN
+        response.extend_from_slice(&[0x81, 0x83]); // Flags: RCODE=3 (NXDOMAIN)
     }
 
-    None
+    response.extend_from_slice(&query[4..6]); // QDCOUNT
+    if is_blocked || answer.is_some() {
+        response.extend_from_slice(&[0x00, 0x01]); // ANCOUNT = 1
+    } else {
+        response.extend_from_slice(&[0x00, 0x00]); // ANCOUNT = 0
+    }
+    response.extend_from_slice(&[0x00, 0x00]); // NSCOUNT
+    response.extend_from_slice(&[0x00, 0x00]); // ARCOUNT
+
+    // Question Section (Copy from query)
+    // We need to copy up to the end of the question section which we calculated as `pos`
+    response.extend_from_slice(&query[12..pos]);
+
+    // Answer Section
+    if is_blocked {
+        // Name pointer (0xC00C points to start of question name)
+        response.extend_from_slice(&[0xc0, 0x0c]);
+        // Type A (1)
+        response.extend_from_slice(&[0x00, 0x01]);
+        // Class IN (1)
+        response.extend_from_slice(&[0x00, 0x01]);
+        // TTL (0)
+        response.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+        // RDLENGTH (4 for IPv4)
+        response.extend_from_slice(&[0x00, 0x04]);
+        // RDATA (0.0.0.0)
+        response.extend_from_slice(&[0,0,0,0]);
+    } else if let Some(rec) = answer {
+        // Name pointer (0xC00C points to start of question name)
+        response.extend_from_slice(&[0xc0, 0x0c]);
+        // Type A (1)
+        response.extend_from_slice(&[0x00, 0x01]);
+        // Class IN (1)
+        response.extend_from_slice(&[0x00, 0x01]);
+        // TTL
+        response.extend_from_slice(&rec.ttl.to_be_bytes());
+        // RDLENGTH (4 for IPv4)
+        response.extend_from_slice(&[0x00, 0x04]);
+        // RDATA (IP Address)
+        if let Ok(ip) = rec.value.parse::<std::net::Ipv4Addr>() {
+            response.extend_from_slice(&ip.octets());
+        } else {
+            // Fallback or error handling
+            response.extend_from_slice(&[0,0,0,0]);
+        }
+    }
+
+    let status = if is_blocked { "Blocked".to_string() } else { "Allowed".to_string() };
+    Some((response, domain_name, status))
+}
+
+fn get_blacklist_file() -> String {
+    var("CRABFLOW_DNS_BLACKLIST").unwrap_or_else(|_| "blacklist.json".to_string())
+}
+
+pub fn list_blacklist() -> Vec<String> {
+    BLACKLIST_CACHE.read().unwrap().iter().cloned().collect()
+}
+
+#[tauri::command]
+pub fn get_blacklist() -> Vec<String> {
+    list_blacklist()
+}
+
+#[tauri::command]
+pub fn block_domain(domain: String) -> Result<(), String> {
+    let mut list = list_blacklist();
+    if !list.contains(&domain) {
+        list.push(domain.clone());
+        
+        // Update Cache
+        {
+            let mut cache = BLACKLIST_CACHE.write().unwrap();
+            cache.insert(domain.clone());
+        }
+
+        let serialized = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
+        post::write_file(&get_blacklist_file(), &serialized)?;
+        logging::log_event("system".into(), "block_domain".into(), domain);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn unblock_domain(domain: String) -> Result<(), String> {
+    let mut list = list_blacklist();
+    if let Some(pos) = list.iter().position(|x| *x == domain) {
+        list.remove(pos);
+
+        // Update Cache
+        {
+            let mut cache = BLACKLIST_CACHE.write().unwrap();
+            cache.remove(&domain);
+        }
+
+        let serialized = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
+        post::write_file(&get_blacklist_file(), &serialized)?;
+        logging::log_event("system".into(), "unblock_domain".into(), domain);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn import_blacklist(domains: Vec<String>) -> Result<usize, String> {
+    let mut list = list_blacklist();
+    let mut count = 0;
+    let mut cache = BLACKLIST_CACHE.write().unwrap();
+
+    for domain in domains {
+        if !cache.contains(&domain) {
+            list.push(domain.clone());
+            cache.insert(domain);
+            count += 1;
+        }
+    }
+    if count > 0 {
+        let serialized = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
+        post::write_file(&get_blacklist_file(), &serialized)?;
+        logging::log_event("system".into(), "import_blacklist".into(), format!("Imported {} domains", count));
+    }
+    Ok(count)
 }
 
 fn build_dns_response(id: &[u8], query: &[u8], ip_str: &str) -> Vec<u8> {
@@ -231,6 +451,12 @@ fn build_dns_response(id: &[u8], query: &[u8], ip_str: &str) -> Vec<u8> {
 pub fn remove_record(name: String, rtype: String) -> Result<(), String> {
     let mut records = list_records();
     records.retain(|r| !(r.name == name && r.rtype == rtype));
+
+    // Update Cache
+    {
+        let mut cache = RECORDS_CACHE.write().unwrap();
+        *cache = records.clone();
+    }
 
     let serialized = serde_json::to_string_pretty(&records).map_err(|e| e.to_string())?;
     post::write_file(&get_dns_file(), &serialized)?;

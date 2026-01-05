@@ -151,9 +151,23 @@
           </li>
 
           <li class="nav-item">
+            <a href="/admin/adblock" class="nav-link" class:active={$page.url.pathname.includes('/admin/adblock')}>
+              <i class="nav-icon fas fa-ban"></i>
+              <p>Ad-Block</p>
+            </a>
+          </li>
+
+          <li class="nav-item">
             <a href="/admin/users" class="nav-link" class:active={$page.url.pathname.includes('/admin/users')}>
               <i class="nav-icon fas fa-users"></i>
               <p>Users</p>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a href="/admin/groups" class="nav-link" class:active={$page.url.pathname.includes('/admin/groups')}>
+              <i class="nav-icon fas fa-users-cog"></i>
+              <p>Groups</p>
             </a>
           </li>
 
@@ -170,6 +184,13 @@
             <a href="/admin/settings" class="nav-link" class:active={$page.url.pathname.includes('/admin/settings')}>
               <i class="nav-icon fas fa-cogs"></i>
               <p>Settings</p>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a href="/admin/about" class="nav-link" class:active={$page.url.pathname.includes('/admin/about')}>
+              <i class="nav-icon fas fa-info-circle"></i>
+              <p>About</p>
             </a>
           </li>
 

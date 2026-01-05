@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -13,8 +13,19 @@ pub struct LoginRecord {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Group {
+    pub name: String,
+    pub description: String,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct User {
     pub username: String,
+    #[serde(default)]
+    pub nickname: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
     pub password_hash: String, // In a real app, use bcrypt/argon2
     pub role: String, // "admin", "user", "guest"
     pub groups: Vec<String>,
@@ -34,12 +45,16 @@ pub struct UserSettings {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserDatabase {
     pub users: Vec<User>,
+    #[serde(default)]
+    pub groups: Vec<Group>,
     pub settings: UserSettings,
 }
 
+
+#[derive(Clone)]
 pub struct UserStore {
     pub db_path: PathBuf,
-    pub db: Mutex<UserDatabase>,
+    pub db: Arc<Mutex<UserDatabase>>,
 }
 
 impl UserStore {
@@ -53,7 +68,7 @@ impl UserStore {
         
         Self {
             db_path,
-            db: Mutex::new(db),
+            db: Arc::new(Mutex::new(db)),
         }
     }
 
@@ -74,6 +89,8 @@ impl Default for UserDatabase {
             users: vec![
                 User {
                     username: "admin".to_string(),
+                    nickname: Some("Administrator".to_string()),
+                    email: Some("admin@example.com".to_string()),
                     password_hash: "admin".to_string(), // Default password
                     role: "admin".to_string(),
                     groups: vec!["admin".to_string()],
@@ -81,6 +98,18 @@ impl Default for UserDatabase {
                     is_approved: true,
                     login_history: vec![],
                     id_document_path: None,
+                }
+            ],
+            groups: vec![
+                Group {
+                    name: "admin".to_string(),
+                    description: "Administrators with full access".to_string(),
+                    permissions: vec!["*".to_string()],
+                },
+                Group {
+                    name: "user".to_string(),
+                    description: "Standard users".to_string(),
+                    permissions: vec!["portal:access".to_string()],
                 }
             ],
             settings: UserSettings {
@@ -96,6 +125,69 @@ impl Default for UserDatabase {
 pub fn list_users(store: State<UserStore>) -> Result<Vec<User>, String> {
     let db = store.db.lock().map_err(|e| e.to_string())?;
     Ok(db.users.clone())
+}
+
+// Group Management Commands
+
+#[tauri::command]
+pub fn list_groups(store: State<UserStore>) -> Result<Vec<Group>, String> {
+    let db = store.db.lock().map_err(|e| e.to_string())?;
+    Ok(db.groups.clone())
+}
+
+#[tauri::command]
+pub fn add_group(store: State<UserStore>, name: String, description: String, permissions: Vec<String>) -> Result<(), String> {
+    let mut db = store.db.lock().map_err(|e| e.to_string())?;
+    if db.groups.iter().any(|g| g.name == name) {
+        return Err("Group already exists".to_string());
+    }
+    db.groups.push(Group { name, description, permissions });
+    drop(db);
+    store.save()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_group(store: State<UserStore>, name: String, description: String, permissions: Vec<String>) -> Result<(), String> {
+    let mut db = store.db.lock().map_err(|e| e.to_string())?;
+    if let Some(group) = db.groups.iter_mut().find(|g| g.name == name) {
+        group.description = description;
+        group.permissions = permissions;
+    } else {
+        return Err("Group not found".to_string());
+    }
+    drop(db);
+    store.save()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_group(store: State<UserStore>, name: String) -> Result<(), String> {
+    if name == "admin" {
+        return Err("Cannot delete admin group".to_string());
+    }
+    let mut db = store.db.lock().map_err(|e| e.to_string())?;
+    db.groups.retain(|g| g.name != name);
+    drop(db);
+    store.save()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_permissions() -> Vec<String> {
+    vec![
+        "user:read".to_string(),
+        "user:write".to_string(),
+        "user:delete".to_string(),
+        "group:read".to_string(),
+        "group:write".to_string(),
+        "network:read".to_string(),
+        "network:write".to_string(),
+        "system:read".to_string(),
+        "system:write".to_string(),
+        "portal:access".to_string(),
+        "*".to_string(),
+    ]
 }
 
 #[tauri::command]
@@ -183,6 +275,20 @@ pub fn change_password(store: State<UserStore>, username: String, new_password: 
     let mut db = store.db.lock().map_err(|e| e.to_string())?;
     if let Some(user) = db.users.iter_mut().find(|u| u.username == username) {
         user.password_hash = new_password; // Hash in production!
+    } else {
+        return Err("User not found".to_string());
+    }
+    drop(db);
+    store.save()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_user_profile(store: State<UserStore>, username: String, nickname: Option<String>, email: Option<String>) -> Result<(), String> {
+    let mut db = store.db.lock().map_err(|e| e.to_string())?;
+    if let Some(user) = db.users.iter_mut().find(|u| u.username == username) {
+        user.nickname = nickname;
+        user.email = email;
     } else {
         return Err("User not found".to_string());
     }
