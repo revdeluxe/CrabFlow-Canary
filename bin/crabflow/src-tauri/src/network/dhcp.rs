@@ -40,6 +40,14 @@ pub fn list_leases() -> Vec<Lease> {
     }
 }
 
+/// Check if an IP is actively leased
+pub fn is_ip_leased(ip: &str) -> bool {
+    let leases = list_leases();
+    // Simple check: is IP in the list and not expired? 
+    // For now just check existence.
+    leases.iter().any(|l| l.ip == ip)
+}
+
 /// Add a static lease
 pub fn add_static_lease(input: LeaseInput) -> Result<(), String> {
     let mut leases = list_leases();

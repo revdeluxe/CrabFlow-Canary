@@ -9,5 +9,5 @@ pub fn initialize_user_management() {
     if !db_path.exists() {
         let _ = fs::create_dir_all(db_path);
     }
-    println!("User management initialized");
+    crate::sysmodules::logging::log_info("User management initialized");
 }

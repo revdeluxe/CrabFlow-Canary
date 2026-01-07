@@ -27,6 +27,15 @@
     }
   }
 
+  let interfaces = []
+  async function refreshInterfaces() {
+      try {
+          interfaces = await invoke("list_interfaces")
+      } catch (e) {
+          console.error("Failed to list interfaces:", e)
+      }
+  }
+
   async function refreshDnsStats() {
     try {
       const logs = await invoke("get_query_logs", { limit: 1000 })
@@ -54,6 +63,7 @@
         refreshStatus()
         refreshLogs()
         refreshDnsStats()
+        refreshInterfaces()
       }, 2000)
     } else {
       clearInterval(interval)
@@ -87,10 +97,12 @@
     refreshStatus()
     refreshLogs()
     refreshDnsStats()
+    refreshInterfaces()
     interval = setInterval(() => {
       refreshStatus()
       refreshLogs()
       refreshDnsStats()
+      refreshInterfaces()
     }, 2000)
   })
 
@@ -185,6 +197,44 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Interface List -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Network Interfaces</h3>
+                </div>
+                <div class="card-body table-responsive p-0">
+                    <table class="table table-sm table-hover text-nowrap">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>IP Addresses</th>
+                                <th>MAC</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {#each interfaces as iface}
+                                <tr>
+                                    <td>{iface.name}</td>
+                                    <td>
+                                        {#each iface.ips as ip}
+                                            <span class="badge bg-light mr-1">{ip}</span>
+                                        {/each}
+                                    </td>
+                                    <td>{iface.mac || '-'}</td>
+                                </tr>
+                            {/each}
+                            {#if interfaces.length === 0}
+                                <tr><td colspan="3" class="text-center text-muted">No interfaces found.</td></tr>
+                            {/if}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- DNS Statistics -->

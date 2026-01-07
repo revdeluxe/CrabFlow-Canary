@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 // src-tauri/src/main.rs
 // reserved for main application logic and user interaction flow
 mod sysmodules;
@@ -9,12 +11,13 @@ mod http_server; // New module
 mod init;
 mod render;
 
-use tauri::Window;
+use tauri::{Window, Manager};
 // use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use user_management::user::UserStore;
 use user_management::auth::SessionStore;
 use sysinfo::System;
+use is_elevated::is_elevated;
 
 #[tauri::command]
 fn begin_setup(window: Window) {
@@ -31,13 +34,17 @@ fn startup_process(window: Window) {
         sysmodules::logging::log_info("Requesting admin privileges...");
         
         if let Ok(exe) = std::env::current_exe() {
+            let cwd = exe.parent().unwrap();
             // Relaunch as admin using PowerShell
             // We use "Start-Process -Verb RunAs" to trigger UAC
             let _ = std::process::Command::new("powershell")
                 .arg("Start-Process")
+                .arg("-FilePath")
+                .arg(format!("\"{}\"", exe.display())) // Quote the path to handle spaces
+                .arg("-WorkingDirectory")
+                .arg(format!("\"{}\"", cwd.display()))
                 .arg("-Verb")
                 .arg("RunAs")
-                .arg(format!("\"{}\"", exe.display())) // Quote the path to handle spaces
                 .spawn();
             
             // Exit the current non-admin process
@@ -57,43 +64,56 @@ fn startup_process(window: Window) {
 }
 
 fn main() {
+    if !is_elevated() {
+        eprintln!("Error: This application requires administrative privileges. Please run as Administrator or root.");
+        
+        #[cfg(windows)]
+        {
+            // Optional: You could try to self-elevate here via ShellExecute, 
+            // but the manifest should prevent us getting here on Windows.
+        }
+        std::process::exit(1);
+    }
+
     dotenv::dotenv().ok();
     sysmodules::logging::init_logging(); 
     network::init::initialize_networking(); 
     user_management::init::initialize_user_management(); 
     
-    let user_db_path = sysmodules::config::get_project_root().join("db/users.json");
-    
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+    rt.block_on(async {
+        if let Err(e) = sysmodules::db::init().await {
+             eprintln!("DB Init Error: {}", e);
+        }
+        if let Err(e) = sysmodules::db::migrate_legacy().await {
+            eprintln!("DB Migration Error: {}", e);
+        }
+    });
+
     // Create shared state
-    let user_store = UserStore::new(user_db_path);
+    let user_store = UserStore::new();
+    let session_store = SessionStore::new();
     
-    // Spawn HTTP Server
-    let server_store = user_store.clone();
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(http_server::start_server(server_store));
+    rt.block_on(async {
+         if let Err(e) = user_store.load_from_db().await {
+             eprintln!("Failed to load UserStore from DB: {}", e);
+         }
     });
 
     tauri::Builder::default()
+        .setup(|app| {
+            let user_store = app.state::<UserStore>().inner().clone();
+            let session_store = app.state::<SessionStore>().inner().clone();
+            
+            tauri::async_runtime::spawn(async move {
+                http_server::start_server(user_store, session_store).await;
+            });
+            Ok(())
+        })
         .manage(Mutex::new(System::new_all()))
-        .manage(user_store) // Pass the Arc directly? No, Tauri expects the type itself usually, or we need to wrap it.
-        // Wait, UserStore::new returns UserStore. Arc::new returns Arc<UserStore>.
-        // If existing commands expect State<UserStore>, they expect the inner type managed by Tauri.
-        // If we pass Arc<UserStore> to manage, then commands must ask for State<Arc<UserStore>>.
-        // This is a BREAKING CHANGE for existing commands.
-        // To avoid breaking existing commands, we should probably let Tauri manage the UserStore as before,
-        // BUT we need access to it for the HTTP server.
-        // We can't easily extract it from Tauri once built.
-        // Solution: Use Arc<UserStore> everywhere.
-        // I will update the UserStore struct to be cheap to clone (it holds a Mutex inside, so maybe wrap the inner in Arc?)
-        // Actually, UserStore has `db: Mutex<UserDatabase>`.
-        // If I wrap UserStore in Arc, then `State<Arc<UserStore>>` is what commands need.
-        // Let's check `user_management/user.rs`.
-        // It says `pub struct UserStore { pub db_path: PathBuf, pub db: Mutex<UserDatabase> }`.
-        // If I change `db` to `Arc<Mutex<UserDatabase>>`, then UserStore is cloneable and shares state.
-        
-        // Let's do that refactor first. It's safer.
-        .manage(SessionStore::new())
+        .manage(user_store)
+        .manage(session_store)
+        .manage(Mutex::new(sysinfo::Networks::new_with_refreshed_list()))
         .invoke_handler(tauri::generate_handler![
             // Main
             begin_setup,
@@ -121,6 +141,7 @@ fn main() {
             network::client::remove_lease,
             network::client::list_records,
             network::client::add_record,
+            network::client::update_record,
             network::client::remove_record,
             network::client::update_upstream_interface,
             network::dns::get_query_logs,
@@ -135,10 +156,17 @@ fn main() {
             // Network Monitor
             network::monitor::get_system_status,
             network::monitor::start_wlan_monitoring,
+            network::monitor::list_interfaces,
 
             // Network Packet
             network::packet::send_packet,
             network::packet::start_packet_listener,
+
+            // Firewall
+            network::firewall::list_firewall_rules,
+            network::firewall::add_firewall_rule,
+            network::firewall::update_firewall_rule,
+            network::firewall::delete_firewall_rule,
 
             // Network Wifi
             network::wifi::create_hotspot,
@@ -156,6 +184,7 @@ fn main() {
             user_management::auth::register_user,
             user_management::auth::logout,
             user_management::auth::check_auth,
+            user_management::auth::get_online_users,
 
             // User Management
             user_management::user::list_users,
@@ -197,4 +226,5 @@ fn main() {
             }
             _ => {}
         });
+    
 }

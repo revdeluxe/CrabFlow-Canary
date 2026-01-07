@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '$lib/tauri'
+  import { session } from '$lib/stores/session'
+  import { get } from 'svelte/store'
 
   let user = {
     username: 'Admin',
@@ -8,16 +10,24 @@
     nickname: 'Administrator',
     role: 'Administrator'
   }
+  let newPassword = ''
   let history = []
   let loading = true
   let fileInput;
 
   onMount(async () => {
     try {
-      const config = await api.loadSetup()
-      if (config) {
-        // Fallback to config if user DB doesn't have it yet, but ideally we fetch from DB
-        user.username = config.admin_user || 'Admin'
+      const s = get(session);
+      let config = null;
+
+      if (s && s.user) {
+        user.username = s.user.username;
+      } else {
+        config = await api.loadSetup()
+        if (config) {
+            // Fallback to config if user DB doesn't have it yet, but ideally we fetch from DB
+            user.username = config.admin_user || 'Admin'
+        }
       }
       
       // Fetch actual user data from DB
@@ -45,6 +55,12 @@
   async function saveProfile() {
     try {
       await api.updateUserProfile(user.username, user.nickname, user.email)
+      
+      if (newPassword) {
+        await api.changePassword(user.username, newPassword)
+        newPassword = '' // Clear after save
+      }
+      
       alert("Profile updated successfully!")
     } catch (e) {
       alert("Failed to update profile: " + e)
@@ -181,6 +197,11 @@
                   <div class="form-group">
                     <label for="inputEmail">Email</label>
                     <input type="email" class="form-control" id="inputEmail" placeholder="Email" bind:value={user.email}>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="inputPassword">New Password</label>
+                    <input type="password" class="form-control" id="inputPassword" placeholder="Leave blank to keep current" bind:value={newPassword}>
                   </div>
                   
                   <!-- Explicit Upload Button in Edit Container -->

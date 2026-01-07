@@ -1,5 +1,5 @@
 {
-  "hostname": "local.crab",
+  "hostname": "prometheus.lan",
   "admin_email": "revchannel01@gmail.com",
   "admin_user": "admin",
   "admin_pass": "admin",
@@ -20,6 +20,9 @@
       "8.8.4.4"
     ],
     "lease_time": 86400
+  },
+  "dns": {
+    "allow_non_dhcp_clients": true
   },
   "hotspot": {
     "enabled": false,

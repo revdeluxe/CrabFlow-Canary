@@ -1,6 +1,7 @@
 // src-tauri/src/network/wifi.rs
 use std::process::Command;
 use crate::sysmodules::logging;
+use std::io::Write;
 
 /// Create a hotspot (Windows Hosted Network)
 /// Note: Hosted Network is deprecated in newer Windows 10/11, but this is the standard command way.
@@ -29,8 +30,38 @@ pub fn create_hotspot(ssid: String, key: String) -> Result<(), String> {
         return Err(format!("Failed to start hosted network: {}", String::from_utf8_lossy(&output_start.stderr)));
     }
 
+    // 3. Start Anti-Orphan Watchdog
+    start_watchdog();
+
     logging::log_info("Hotspot started successfully.");
     Ok(())
+}
+
+fn start_watchdog() {
+    let pid = std::process::id();
+    let script = format!(
+        r#"
+        param($TargetPid)
+        while (Get-Process -Id $TargetPid -ErrorAction SilentlyContinue) {{
+            Start-Sleep -Seconds 5
+        }}
+        # Parent process ($TargetPid) is gone. Stopping hotspot.
+        netsh wlan stop hostednetwork
+        "#,
+    );
+
+    // Create a temporary script file
+    let mut temp_dir = std::env::temp_dir();
+    temp_dir.push("crabflow_wifi_watchdog.ps1");
+    
+    if let Ok(mut file) = std::fs::File::create(&temp_dir) {
+        if file.write_all(script.as_bytes()).is_ok() {
+             // Spawn detached powershell
+             let _ = Command::new("powershell")
+                .args(["-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", temp_dir.to_str().unwrap(), "-TargetPid", &pid.to_string()])
+                .spawn();
+        }
+    }
 }
 
 /// Stop hotspot

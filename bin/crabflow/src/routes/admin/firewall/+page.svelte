@@ -1,43 +1,80 @@
 <script>
+  import { invoke } from '@tauri-apps/api/core'
   import { onMount } from 'svelte'
-  
-  // Mock Data for UI Demonstration
-  let rules = [
-    { id: 1, name: "Allow HTTP", port: 80, protocol: "TCP", action: "ALLOW" },
-    { id: 2, name: "Allow HTTPS", port: 443, protocol: "TCP", action: "ALLOW" },
-    { id: 3, name: "Block Telnet", port: 23, protocol: "TCP", action: "DENY" },
-    { id: 4, name: "SSH Access", port: 22, protocol: "TCP", action: "ALLOW" }
-  ]
 
+  let rules = []
+  let loading = true
   let showModal = false
+  
+  // Edit State
+  let editMode = false
+  let currentId = ""
+
   let newRule = {
     name: "",
-    port: "",
+    port: 80,
     protocol: "TCP",
-    action: "ALLOW"
+    action: "ALLOW",
+    direction: "INBOUND"
   }
 
-  function addRule() {
-    if (!newRule.name || !newRule.port) {
-      alert("Please fill in all fields")
-      return
+  async function refresh() {
+    try {
+      rules = await invoke("list_firewall_rules")
+    } catch (e) {
+      console.error("Failed to load rules:", e)
+      alert("Failed to load rules: " + e)
+    } finally {
+      loading = false
     }
-    
-    rules = [...rules, {
-      id: Date.now(),
-      name: newRule.name,
-      port: parseInt(newRule.port),
-      protocol: newRule.protocol,
-      action: newRule.action
-    }]
-    
-    newRule = { name: "", port: "", protocol: "TCP", action: "ALLOW" }
-    showModal = false
   }
 
-  function deleteRule(id) {
-    if(confirm("Are you sure you want to delete this rule?")) {
-      rules = rules.filter(r => r.id !== id)
+  onMount(refresh)
+
+  function openAddModal() {
+    newRule = { name: "", port: 80, protocol: "TCP", action: "ALLOW", direction: "INBOUND" }
+    editMode = false
+    currentId = ""
+    showModal = true
+  }
+
+  function openEditModal(rule) {
+    newRule = {
+      name: rule.name,
+      port: rule.port,
+      protocol: rule.protocol,
+      action: rule.action,
+      direction: rule.direction || "INBOUND"
+    }
+    currentId = rule.id
+    editMode = true
+    showModal = true
+  }
+
+  async function handleSave() {
+    try {
+      newRule.port = parseInt(newRule.port)
+      
+      if (editMode) {
+        await invoke("update_firewall_rule", { id: currentId, input: newRule })
+      } else {
+        await invoke("add_firewall_rule", { input: newRule })
+      }
+      
+      showModal = false
+      refresh()
+    } catch (e) {
+      alert("Operation failed: " + e)
+    }
+  }
+
+  async function deleteRule(id) {
+    if(!confirm("Are you sure you want to delete this rule?")) return
+    try {
+      await invoke("delete_firewall_rule", { id })
+      refresh()
+    } catch (e) {
+      alert("Failed to delete rule: " + e)
     }
   }
 </script>
@@ -58,8 +95,11 @@
       <div class="card-header">
         <h3 class="card-title">Active Rules</h3>
         <div class="card-tools">
-          <button type="button" class="btn btn-primary btn-sm" on:click={() => showModal = true}>
+          <button type="button" class="btn btn-primary btn-sm" on:click={openAddModal}>
             <i class="fas fa-plus"></i> Add Rule
+          </button>
+          <button type="button" class="btn btn-tool" on:click={refresh}>
+            <i class="fas fa-sync"></i>
           </button>
         </div>
       </div>
@@ -68,6 +108,7 @@
           <thead>
             <tr>
               <th>Rule Name</th>
+              <th>Direction</th>
               <th>Port</th>
               <th>Protocol</th>
               <th>Action</th>
@@ -75,27 +116,38 @@
             </tr>
           </thead>
           <tbody>
-            {#each rules as rule}
-              <tr>
-                <td>{rule.name}</td>
-                <td>{rule.port}</td>
-                <td><span class="badge badge-secondary">{rule.protocol}</span></td>
-                <td>
-                  {#if rule.action === 'ALLOW'}
-                    <span class="badge badge-success">ALLOW</span>
-                  {:else}
-                    <span class="badge badge-danger">DENY</span>
-                  {/if}
-                </td>
-                <td>
-                  <button class="btn btn-danger btn-xs" on:click={() => deleteRule(rule.id)}>
-                    <i class="fas fa-trash"></i>
-                  </button>
-                </td>
-              </tr>
-            {/each}
-            {#if rules.length === 0}
-              <tr><td colspan="5" class="text-center">No firewall rules active.</td></tr>
+            {#if loading}
+                <tr><td colspan="6" class="text-center">Loading...</td></tr>
+            {:else if rules.length === 0}
+                <tr><td colspan="6" class="text-center">No firewall rules active.</td></tr>
+            {:else}
+              {#each rules as rule}
+                <tr>
+                  <td>{rule.name}</td>
+                  <td>
+                    <span class="badge" class:badge-info={rule.direction=='INBOUND'} class:badge-warning={rule.direction=='OUTBOUND'}>
+                      {rule.direction}
+                    </span>
+                  </td>
+                  <td>{rule.port}</td>
+                  <td><span class="badge badge-secondary">{rule.protocol}</span></td>
+                  <td>
+                    {#if rule.action === 'ALLOW'}
+                      <span class="badge badge-success">ALLOW</span>
+                    {:else}
+                      <span class="badge badge-danger">DENY</span>
+                    {/if}
+                  </td>
+                  <td>
+                    <button class="btn btn-primary btn-xs mr-1" on:click={() => openEditModal(rule)}>
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-danger btn-xs" on:click={() => deleteRule(rule.id)}>
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              {/each}
             {/if}
           </tbody>
         </table>
@@ -109,7 +161,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h4 class="modal-title">Add Firewall Rule</h4>
+        <h4 class="modal-title">{editMode ? 'Edit' : 'Add'} Firewall Rule</h4>
         <button type="button" class="close" on:click={() => showModal = false}>
           <span>&times;</span>
         </button>
@@ -118,6 +170,13 @@
         <div class="form-group">
           <label>Rule Name</label>
           <input type="text" class="form-control" bind:value={newRule.name} placeholder="e.g. Web Server">
+        </div>
+        <div class="form-group">
+          <label>Direction</label>
+          <select class="form-control" bind:value={newRule.direction}>
+            <option value="INBOUND">INBOUND</option>
+            <option value="OUTBOUND">OUTBOUND</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Port</label>
@@ -129,6 +188,7 @@
             <option value="TCP">TCP</option>
             <option value="UDP">UDP</option>
             <option value="ICMP">ICMP</option>
+            <option value="ANY">ANY</option>
           </select>
         </div>
         <div class="form-group">
@@ -141,7 +201,7 @@
       </div>
       <div class="modal-footer justify-content-between">
         <button type="button" class="btn btn-default" on:click={() => showModal = false}>Close</button>
-        <button type="button" class="btn btn-primary" on:click={addRule}>Add Rule</button>
+        <button type="button" class="btn btn-primary" on:click={handleSave}>Save changes</button>
       </div>
     </div>
   </div>

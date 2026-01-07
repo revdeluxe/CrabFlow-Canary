@@ -52,16 +52,17 @@ export const api = {
   resetSetup: async () => await invoke('reset_setup'),
   
   // Auth
-  login: async (username, password) => await invoke('login', { req: { username, password } }),
-  registerUser: async (username, password) => await invoke('register_user', { username, password }),
-  logout: async (token) => await invoke('logout', { token }),
-  checkAuth: async (token) => await invoke('check_auth', { token }),
+  login: async (username, password) => await request('/auth/login', 'POST', { username, password }),
+  registerUser: async (username, password) => await request('/auth/register', 'POST', { username, password }),
+  logout: async (token) => await invoke('logout', { token }), // Not yet migrated
+  checkAuth: async (token) => await request('/auth/check', 'POST', { token }),
   
   // User Management
-  listUsers: async () => await invoke('list_users'),
+  listUsers: async () => await request('/users'),
   updateUserStatus: async (username, active, approved) => await invoke('update_user_status', { username, active, approved }),
   updateUserGroups: async (username, groups) => await invoke('update_user_groups', { username, groups }),
   updateUserProfile: async (username, nickname, email) => await invoke('update_user_profile', { username, nickname, email }),
+  changePassword: async (username, newPassword) => await invoke('change_password', { username, newPassword }),
   getUserSettings: async () => await invoke('get_user_settings'),
   setUserSettings: async (settings) => await invoke('set_user_settings', { settings }),
   

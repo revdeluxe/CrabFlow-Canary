@@ -1,17 +1,18 @@
 use tauri::State;
 use crate::user_management::user::{UserStore, User};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub struct SessionStore {
-    pub sessions: Mutex<HashMap<String, User>>, // Token -> User
+    pub sessions: Arc<Mutex<HashMap<String, User>>>, // Token -> User
 }
 
 impl SessionStore {
     pub fn new() -> Self {
         Self {
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -96,31 +97,41 @@ pub fn check_auth(session_store: State<SessionStore>, token: String) -> Result<O
 }
 
 #[tauri::command]
-pub fn register_user(store: State<UserStore>, username: String, password: String) -> Result<String, String> {
-    let mut db = store.db.lock().map_err(|e| e.to_string())?;
-    
-    if db.users.iter().any(|u| u.username == username) {
-        return Err("Username already exists".to_string());
+pub fn get_online_users(session_store: State<SessionStore>) -> Result<Vec<User>, String> {
+    let sessions = session_store.sessions.lock().map_err(|e| e.to_string())?;
+    let users = sessions.values().cloned().collect();
+    Ok(users)
+}
+
+#[tauri::command]
+pub async fn register_user(store: State<'_, UserStore>, username: String, password: String) -> Result<String, String> {
+    let auto_approve;
+    {
+        let mut db = store.db.lock().map_err(|e| e.to_string())?;
+        
+        if db.users.iter().any(|u| u.username == username) {
+            return Err("Username already exists".to_string());
+        }
+
+        auto_approve = db.settings.auto_approve_new_users;
+
+        let new_user = User {
+            username: username.clone(),
+            nickname: None,
+            email: None,
+            password_hash: password, // Hash this in production!
+            role: "user".to_string(),
+            groups: vec![],
+            is_active: true,
+            is_approved: auto_approve,
+            login_history: vec![],
+            id_document_path: None,
+        };
+
+        db.users.push(new_user);
     }
-
-    let auto_approve = db.settings.auto_approve_new_users;
-
-    let new_user = User {
-        username: username.clone(),
-        nickname: None,
-        email: None,
-        password_hash: password, // Hash this in production!
-        role: "user".to_string(),
-        groups: vec![],
-        is_active: true,
-        is_approved: auto_approve,
-        login_history: vec![],
-        id_document_path: None,
-    };
-
-    db.users.push(new_user);
-    drop(db);
-    store.save()?;
+    
+    store.persist().await?;
 
     if auto_approve {
         Ok("Registration successful".to_string())

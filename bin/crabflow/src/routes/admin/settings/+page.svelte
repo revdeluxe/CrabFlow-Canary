@@ -22,6 +22,9 @@
       dns_servers: ["8.8.8.8", "8.8.4.4"],
       lease_time: 86400
     },
+    dns: {
+      allow_non_dhcp_clients: true
+    },
     hotspot: {
       enabled: false,
       ssid: "CrabFlow-Hotspot",
@@ -70,6 +73,13 @@
       } else {
           if (!setupConfig.dhcp.bind_address) setupConfig.dhcp.bind_address = "0.0.0.0";
           if (!setupConfig.dhcp.upstream_interface) setupConfig.dhcp.upstream_interface = "0.0.0.0";
+      }
+
+      // Ensure dns object exists
+      if (!setupConfig.dns) {
+        setupConfig.dns = {
+          allow_non_dhcp_clients: true
+        }
       }
 
       // Ensure hotspot object exists
@@ -300,6 +310,14 @@
                     {/each}
                   </select>
                   <small class="form-text text-muted">Interface used to forward DNS queries to the internet.</small>
+                </div>
+                <div class="form-group">
+                  <label>DNS ACL</label>
+                  <div class="custom-control custom-switch">
+                    <input type="checkbox" class="custom-control-input" id="dnsAllowNonDhcp" bind:checked={setupConfig.dns.allow_non_dhcp_clients}>
+                    <label class="custom-control-label" for="dnsAllowNonDhcp">Allow Non-DHCP Clients</label>
+                  </div>
+                  <small class="form-text text-muted">If disabled, only clients in the DHCP lease table can use the DNS server.</small>
                 </div>
               </div>
               <div class="col-md-6">

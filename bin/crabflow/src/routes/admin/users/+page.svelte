@@ -5,9 +5,11 @@
 
   let users = []
   let availableGroups = []
+  let onlineUsers = []
   let loading = true
   let error = null
-  
+  let activeTab = 'all' // 'all', 'online', 'pending'
+
   // Edit State
   let editingUser = null
   let editForm = {
@@ -32,12 +34,14 @@
   async function loadData() {
     loading = true
     try {
-      const [u, g] = await Promise.all([
+      const [u, g, o] = await Promise.all([
         invoke("list_users"),
-        api.listGroups()
+        api.listGroups(),
+        invoke("get_online_users")
       ])
       users = u
       availableGroups = g
+      onlineUsers = o
     } catch (e) {
       error = "Failed to load data: " + e
     } finally {
@@ -406,60 +410,78 @@
     {/if}
 
     <!-- Users Table -->
-    <div class="card">
-      <div class="card-header">
-        <h3 class="card-title">Registered Users</h3>
+    <div class="card card-primary card-outline card-tabs">
+      <div class="card-header p-0 pt-1 border-bottom-0">
+        <ul class="nav nav-tabs" role="tablist">
+          <li class="nav-item">
+            <a class="nav-link" class:active={activeTab === 'all'} href="#" on:click|preventDefault={() => activeTab = 'all'}>All Users</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" class:active={activeTab === 'online'} href="#" on:click|preventDefault={() => activeTab = 'online'}>
+              Online Users <span class="badge badge-success right">{onlineUsers.length}</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" class:active={activeTab === 'pending'} href="#" on:click|preventDefault={() => activeTab = 'pending'}>
+              Pending <span class="badge badge-warning right">{users.filter(u => !u.is_approved).length}</span>
+            </a>
+          </li>
+        </ul>
       </div>
-      <div class="card-body table-responsive p-0">
-        <table class="table table-hover text-nowrap">
-          <thead>
-            <tr>
-              <th>Username</th>
-              <th>Role</th>
-              <th>Groups</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#if loading}
-              <tr><td colspan="5" class="text-center">Loading...</td></tr>
-            {:else if error}
-              <tr><td colspan="5" class="text-center text-danger">{error}</td></tr>
-            {:else}
-              {#each users as user}
-                <tr class="{editingUser && editingUser.username === user.username ? 'bg-light' : ''}">
-                  <td>{user.username}</td>
-                  <td>{user.role}</td>
-                  <td>{user.groups.join(", ")}</td>
-                  <td>
-                    {#if !user.is_approved}
-                      <span class="badge badge-warning">Pending</span>
-                    {:else if user.is_active}
-                      <span class="badge badge-success">Active</span>
+      <div class="card-body">
+            <div class="table-responsive p-0">
+                <table class="table table-hover text-nowrap">
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Username</th>
+                      <th>Role</th>
+                      <th>Groups</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#if loading}
+                      <tr><td colspan="5" class="text-center">Loading...</td></tr>
+                    {:else if error}
+                      <tr><td colspan="5" class="text-center text-danger">{error}</td></tr>
                     {:else}
-                      <span class="badge badge-danger">Disabled</span>
+                      {#each (activeTab === 'online' ? onlineUsers : (activeTab === 'pending' ? users.filter(u => !u.is_approved) : users)) as user}
+                        <tr class="{editingUser && editingUser.username === user.username ? 'bg-light' : ''}">
+                          <td>
+                                {#if !user.is_active}
+                                    <span class="badge badge-danger">Disabled</span>
+                                {:else if !user.is_approved}
+                                    <span class="badge badge-warning">Pending</span>
+                                {:else if onlineUsers.find(ou => ou.username === user.username)}
+                                    <span class="badge badge-success">Online</span>
+                                {:else}
+                                    <span class="badge badge-secondary">Offline</span>
+                                {/if}
+                          </td>
+                          <td>{user.username}</td>
+                          <td>{user.role}</td>
+                          <td>{user.groups.join(", ")}</td>
+                          <td>
+                            <button class="btn btn-info btn-xs" on:click={() => startEdit(user)}>
+                              <i class="fas fa-edit"></i> Edit
+                            </button>
+                            {#if user.username !== 'admin'}
+                              <button class="btn btn-danger btn-xs" on:click={() => deleteUser(user.username)}>
+                                <i class="fas fa-trash"></i> Delete
+                              </button>
+                            {:else}
+                              <button class="btn btn-danger btn-xs disabled" disabled>
+                                <i class="fas fa-trash"></i> Delete
+                              </button>
+                            {/if}
+                          </td>
+                        </tr>
+                      {/each}
                     {/if}
-                  </td>
-                  <td>
-                    <button class="btn btn-info btn-xs" on:click={() => startEdit(user)}>
-                      <i class="fas fa-edit"></i> Edit
-                    </button>
-                    {#if user.username !== 'admin'}
-                      <button class="btn btn-danger btn-xs" on:click={() => deleteUser(user.username)}>
-                        <i class="fas fa-trash"></i> Delete
-                      </button>
-                    {:else}
-                      <button class="btn btn-danger btn-xs disabled" disabled>
-                        <i class="fas fa-trash"></i> Delete
-                      </button>
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            {/if}
-          </tbody>
-        </table>
+                  </tbody>
+                </table>
+            </div>
       </div>
     </div>
 

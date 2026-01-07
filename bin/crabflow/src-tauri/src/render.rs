@@ -18,6 +18,6 @@ pub fn emit<T: Serialize + Clone>(window: &Window, kind: &str, data: T) {
         data,
     };
     if let Err(e) = window.emit("crabflow://render", payload) {
-        eprintln!("Render emit failed: {}", e);
+        crate::sysmodules::logging::log_error(&format!("Render emit failed: {}", e));
     }
 }

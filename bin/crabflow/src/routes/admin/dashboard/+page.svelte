@@ -24,6 +24,7 @@
   let hotspotSsid = ""
   let hotspotKey = ""
   let hotspotLoading = false
+  let interfaces = []
 
   let interval
   let cpuCanvas
@@ -40,6 +41,7 @@
       recordsCount = records.length
 
       systemStatus = await api.getSystemStatus()
+      interfaces = await api.listInterfaces()
       
       const config = await api.loadSetup()
       dhcpActive = config.dhcp && config.dhcp.enabled
@@ -299,6 +301,45 @@
       </div>
     </div>
   </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card card-outline card-secondary collapsed-card">
+            <div class="card-header">
+                <h3 class="card-title">Network Interfaces</h3>
+                <div class="card-tools">
+                    <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>IP Addresses</th>
+                            <th>MAC</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each interfaces as iface}
+                            <tr>
+                                <td>{iface.name}</td>
+                                <td>
+                                    {#each iface.ips as ip}
+                                        <span class="badge bg-light mr-1 text-dark border">{ip}</span>
+                                    {/each}
+                                </td>
+                                <td><small>{iface.mac || '-'}</small></td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="row">

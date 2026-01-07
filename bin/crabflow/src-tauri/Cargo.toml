@@ -33,3 +33,4 @@ axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors"] }
 get_if_addrs = "0.5.3"
+surrealdb = { version = "2.4.0", features = ["kv-surrealkv"] }

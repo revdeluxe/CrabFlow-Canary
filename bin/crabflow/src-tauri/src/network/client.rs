@@ -49,6 +49,11 @@ pub fn add_record(input: DnsRecordInput) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn update_record(old_name: String, old_rtype: String, input: DnsRecordInput) -> Result<(), String> {
+    dns::update_record(old_name, old_rtype, input)
+}
+
+#[tauri::command]
 pub fn remove_record(name: String, rtype: String) -> Result<(), String> {
     dns::remove_record(name, rtype)
 }

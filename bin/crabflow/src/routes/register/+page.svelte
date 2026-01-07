@@ -1,6 +1,7 @@
 <script>
   import { api } from '$lib/tauri'
   import { goto } from '$app/navigation'
+  import { onMount, onDestroy } from 'svelte'
 
   let username = ""
   let password = ""
@@ -31,43 +32,85 @@
       loading = false
     }
   }
+
+  onMount(() => {
+      document.body.classList.add('register-page');
+  });
+  
+  onDestroy(() => {
+      document.body.classList.remove('register-page');
+  });
 </script>
 
-<div class="middle center-align" style="height: 100vh;">
-  <article class="round" style="width: 100%; max-width: 400px;">
-    <h5 class="center-align">Register</h5>
-    
-    {#if error}
-      <div class="chip error margin-bottom">{error}</div>
-    {/if}
+<div class="register-box">
+  <div class="card card-outline card-primary">
+    <div class="card-header text-center">
+      <a href="/" class="h1"><b>Crab</b>Flow</a>
+    </div>
+    <div class="card-body">
+      <p class="login-box-msg">Register a new membership</p>
 
-    {#if success}
-      <div class="chip success margin-bottom">{success}</div>
-    {/if}
+      {#if error}
+        <div class="alert alert-danger">
+            <i class="icon fas fa-ban"></i> {error}
+        </div>
+      {/if}
 
-    <form on:submit|preventDefault={doRegister}>
-      <div class="field label border">
-        <input type="text" bind:value={username} required />
-        <label>Username</label>
-      </div>
-      
-      <div class="field label border">
-        <input type="password" bind:value={password} required />
-        <label>Password</label>
-      </div>
+      {#if success}
+        <div class="alert alert-success">
+            <i class="icon fas fa-check"></i> {success}
+        </div>
+      {/if}
 
-      <div class="field label border">
-        <input type="password" bind:value={confirmPassword} required />
-        <label>Confirm Password</label>
-      </div>
-      
-      <button type="submit" class="fill" style="width: 100%;" disabled={loading}>
-        {loading ? "Registering..." : "Create Account"}
-      </button>
-      
-      <div class="center-align margin-top">
-        <a href="/" class="button transparent">Back to Login</a>
-      </div>
-    </form>
-  </article>
+      <form on:submit|preventDefault={doRegister}>
+        <div class="input-group mb-3">
+          <input type="text" class="form-control" placeholder="Username" bind:value={username} required>
+          <div class="input-group-append">
+            <div class="input-group-text">
+              <span class="fas fa-user"></span>
+            </div>
+          </div>
+        </div>
+        <div class="input-group mb-3">
+          <input type="password" class="form-control" placeholder="Password" bind:value={password} required>
+          <div class="input-group-append">
+            <div class="input-group-text">
+              <span class="fas fa-lock"></span>
+            </div>
+          </div>
+        </div>
+        <div class="input-group mb-3">
+          <input type="password" class="form-control" placeholder="Retype password" bind:value={confirmPassword} required>
+          <div class="input-group-append">
+            <div class="input-group-text">
+              <span class="fas fa-lock"></span>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-8">
+            <div class="icheck-primary">
+              <!-- Checkbox for terms could go here -->
+            </div>
+          </div>
+          <!-- /.col -->
+          <div class="col-4">
+            <button type="submit" class="btn btn-primary btn-block" disabled={loading}>
+                {loading ? '...' : 'Register'}
+            </button>
+          </div>
+          <!-- /.col -->
+        </div>
+      </form>
+
+      <a href="/" class="text-center mt-2 d-block">I already have a membership</a>
+    </div>
+    <!-- /.form-box -->
+  </div><!-- /.card -->
 </div>
+<!-- /.register-box -->
+
+<style>
+    /* Ensure the box is centered vertically in the page if the body class handles the flex centering */
+    /* .register-page class on body in AdminLTE usually handles this min-height and centering */
+</style>

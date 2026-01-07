@@ -67,6 +67,19 @@ impl Default for HotspotConfig {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DnsConfig {
+    pub allow_non_dhcp_clients: bool,
+}
+
+impl Default for DnsConfig {
+    fn default() -> Self {
+        Self {
+            allow_non_dhcp_clients: true,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SetupConfig {
     pub hostname: String,
@@ -79,6 +92,8 @@ pub struct SetupConfig {
     pub monitor_interval: u64,
     #[serde(default)]
     pub dhcp: DhcpConfig,
+    #[serde(default)]
+    pub dns: DnsConfig,
     #[serde(default)]
     pub hotspot: HotspotConfig,
 }
@@ -141,6 +156,7 @@ pub fn load_setup_config() -> Result<SetupConfig, String> {
             first_run: true,
             monitor_interval: 5000,
             dhcp: DhcpConfig::default(),
+            dns: DnsConfig::default(),
             hotspot: HotspotConfig::default(),
         });
     }
@@ -176,6 +192,7 @@ pub fn reset_setup_config() -> Result<(), String> {
         first_run: true,
         monitor_interval: 5000,
         dhcp: DhcpConfig::default(),
+        dns: DnsConfig::default(),
         hotspot: HotspotConfig::default(),
     };
     let json = serde_json::to_string_pretty(&default).map_err(|e| e.to_string())?;

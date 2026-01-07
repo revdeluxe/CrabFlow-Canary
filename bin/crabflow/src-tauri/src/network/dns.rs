@@ -1,7 +1,8 @@
 // src-tauri/src/dns.rs
 
 use serde::{Serialize, Deserialize};
-use crate::sysmodules::{fetch, post, logging};
+use crate::sysmodules::{fetch, post, logging, config};
+use crate::network::dhcp;
 use dotenv::var;
 use std::net::UdpSocket;
 use std::thread;
@@ -163,16 +164,45 @@ pub fn start_dns_server() {
         logging::log_info("DNS Server started on port 53");
 
         let mut buf = [0u8; 512];
+        // Cache config to avoid reading disk on every packet
+        let mut last_config_check = std::time::Instant::now();
+        let mut allow_non_dhcp = true;
+
+        if let Ok(cfg) = config::load_setup_config() {
+             allow_non_dhcp = cfg.dns.allow_non_dhcp_clients;
+        }
+
         while DNS_RUNNING.load(Ordering::Relaxed) {
+            // Update config cache every 5 seconds
+            if last_config_check.elapsed().as_secs() > 5 {
+                if let Ok(cfg) = config::load_setup_config() {
+                     allow_non_dhcp = cfg.dns.allow_non_dhcp_clients;
+                }
+                last_config_check = std::time::Instant::now();
+            }
+
             match socket.recv_from(&mut buf) {
                 Ok((amt, src)) => {
                     let query = &buf[..amt];
+                    let src_ip = src.ip().to_string();
+
+                    // ACL Check
+                    if !allow_non_dhcp {
+                        // We check leases only if restricted. 
+                        // is_ip_leased still reads disk, but filtering is usually for security so correctness > speed?
+                        // Or we could cache leases? For now, we accept the overhead.
+                        if !dhcp::is_ip_leased(&src_ip) {
+                            logging::log_debug(&format!("Blocked DNS query from non-DHCP client: {}", src_ip));
+                            continue; // Drop packet
+                        }
+                    }
+
                     // Simple check: Is it a standard query?
                     // ID (2), Flags (2). Flags 0x0100 (Standard Query)
                     // We just respond to everything with a basic handler for now.
                     
                     if let Some((response, domain, status)) = handle_dns_query(query) {
-                        log_query(src.ip().to_string(), domain, "A".to_string(), status);
+                        log_query(src_ip, domain, "A".to_string(), status);
                         let _ = socket.send_to(&response, src);
                     }
                 }
@@ -445,6 +475,32 @@ fn build_dns_response(id: &[u8], query: &[u8], ip_str: &str) -> Vec<u8> {
     response.extend_from_slice(&parts);
     
     response
+}
+
+/// Update a DNS record
+pub fn update_record(old_name: String, old_rtype: String, input: DnsRecordInput) -> Result<(), String> {
+    let mut records = list_records();
+    if let Some(index) = records.iter().position(|r| r.name == old_name && r.rtype == old_rtype) {
+        let name_for_log = input.name.clone();
+        records[index] = DnsRecord {
+            name: input.name,
+            rtype: input.rtype,
+            value: input.value,
+            ttl: input.ttl,
+        };
+        
+        {
+            let mut cache = RECORDS_CACHE.write().unwrap();
+            *cache = records.clone();
+        }
+
+        let serialized = serde_json::to_string_pretty(&records).map_err(|e| e.to_string())?;
+        post::write_file(&get_dns_file(), &serialized)?;
+        logging::log_event("system".into(), "update_record".into(), name_for_log);
+        Ok(())
+    } else {
+        Err("Record not found".to_string())
+    }
 }
 
 /// Remove a DNS record

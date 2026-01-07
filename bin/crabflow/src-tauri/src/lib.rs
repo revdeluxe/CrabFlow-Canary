@@ -12,7 +12,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(UserStore::new(user_db_path))
+        .manage(UserStore::new())
         .manage(std::sync::Mutex::new(sysinfo::System::new_all()))
         .manage(std::sync::Mutex::new(sysinfo::Networks::new_with_refreshed_list()))
         .invoke_handler(tauri::generate_handler![

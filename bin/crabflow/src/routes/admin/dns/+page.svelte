@@ -37,6 +37,59 @@
     }
   }
 
+  // --- Edit Logic ---
+  let editMode = false
+  let oldRecordName = ""
+  let oldRecordType = ""
+
+  function openEditModal(record) {
+    editMode = true
+    oldRecordName = record.name
+    oldRecordType = record.rtype
+    
+    // Copy into newRecord for binding
+    newRecord = {
+      name: record.name,
+      rtype: record.rtype,
+      value: record.value,
+      ttl: record.ttl
+    }
+    showModal = true
+  }
+
+  async function updateRecord() {
+    try {
+      newRecord.ttl = parseInt(newRecord.ttl)
+      await invoke("update_record", { 
+        oldName: oldRecordName, 
+        oldRtype: oldRecordType, 
+        input: newRecord 
+      })
+      
+      newRecord = { name: "", rtype: "A", value: "", ttl: 3600 }
+      showModal = false
+      editMode = false
+      refresh()
+      alert("Record updated successfully")
+    } catch(e) {
+      alert("Failed to update record: " + e)
+    }
+  }
+
+  function handleSave() {
+    if (editMode) {
+      updateRecord()
+    } else {
+      addRecord()
+    }
+  }
+
+  function closeModal() {
+      showModal = false
+      editMode = false
+      newRecord = { name: "", rtype: "A", value: "", ttl: 3600 }
+  }
+
   async function removeRecord(name, rtype) {
     if (!confirm(`Are you sure you want to remove ${rtype} record for ${name}?`)) return
     try {
@@ -66,7 +119,7 @@
       <div class="card-header">
         <h3 class="card-title">DNS Records</h3>
         <div class="card-tools">
-          <button type="button" class="btn btn-primary btn-sm" on:click={() => showModal = true}>
+          <button type="button" class="btn btn-primary btn-sm" on:click={() => { editMode = false; showModal = true; }}>
             <i class="fas fa-plus"></i> Add Record
           </button>
           <button type="button" class="btn btn-tool" on:click={refresh}>
@@ -98,6 +151,9 @@
                   <td>{r.value}</td>
                   <td>{r.ttl}</td>
                   <td>
+                    <button class="btn btn-primary btn-xs mr-1" on:click={() => openEditModal(r)}>
+                      <i class="fas fa-edit"></i>
+                    </button>
                     <button class="btn btn-danger btn-xs" on:click={() => removeRecord(r.name, r.rtype)}>
                       <i class="fas fa-trash"></i>
                     </button>
@@ -117,8 +173,8 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h4 class="modal-title">Add DNS Record</h4>
-        <button type="button" class="close" on:click={() => showModal = false}>
+        <h4 class="modal-title">{editMode ? 'Edit' : 'Add'} DNS Record</h4>
+        <button type="button" class="close" on:click={closeModal}>
           <span>&times;</span>
         </button>
       </div>
@@ -146,8 +202,8 @@
         </div>
       </div>
       <div class="modal-footer justify-content-between">
-        <button type="button" class="btn btn-default" on:click={() => showModal = false}>Close</button>
-        <button type="button" class="btn btn-primary" on:click={addRecord}>Save changes</button>
+        <button type="button" class="btn btn-default" on:click={closeModal}>Close</button>
+        <button type="button" class="btn btn-primary" on:click={handleSave}>Save changes</button>
       </div>
     </div>
   </div>
