@@ -16,7 +16,8 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // FORCE 0.0.0.0 to allow access from other devices (Phone/Laptop)
+    host: '0.0.0.0', 
     hmr: host
       ? {
           protocol: "ws",

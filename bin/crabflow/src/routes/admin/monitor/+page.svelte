@@ -1,9 +1,11 @@
 <script>
   import { invoke } from '@tauri-apps/api/core'
   import { onMount, onDestroy } from 'svelte'
+  import DnsLogsModal from '$lib/components/DnsLogsModal.svelte'
 
   let logs = []
   let dnsStats = { total: 0, blocked: 0, percentage: 0 }
+  let showDnsModal = false;
   let systemStatus = {
     cpu_usage: 0,
     memory_usage: 0,
@@ -243,6 +245,11 @@
         <div class="card">
           <div class="card-header">
             <h3 class="card-title">DNS Statistics (Last 1000 Queries)</h3>
+            <div class="card-tools">
+              <button type="button" class="btn btn-tool" on:click={() => showDnsModal = true}>
+                <i class="fas fa-list"></i> View Log
+              </button>
+            </div>
           </div>
           <div class="card-body">
             <div class="row">
@@ -306,3 +313,5 @@
     </div>
   </div>
 </section>
+
+<DnsLogsModal bind:show={showDnsModal} />

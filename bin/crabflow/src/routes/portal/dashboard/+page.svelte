@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
+  import { session } from '$lib/stores/session'
 
   let leasesCount = 0
   let recordsCount = 0
@@ -8,15 +9,19 @@
   let devicesCount = 0
 
   async function refresh() {
-    const leases = await invoke("list_leases")
-    leasesCount = leases.length
+    try {
+        const leases = await invoke("list_leases")
+        leasesCount = leases ? leases.length : 0
 
-    const records = await invoke("list_records")
-    recordsCount = records.length
+        const records = await invoke("list_records")
+        recordsCount = records ? records.length : 0
 
-    traffic = await invoke("get_traffic_summary")
-    const devices = await invoke("list_devices")
-    devicesCount = devices.length
+        traffic = await invoke("get_traffic_summary")
+        const devices = await invoke("list_devices")
+        devicesCount = devices ? devices.length : 0
+    } catch (e) {
+        console.error("Dashboard refresh failed:", e)
+    }
   }
 
   onMount(refresh)
@@ -31,7 +36,15 @@
 <div class="row">
   <div class="col-md-12">
     <div class="callout callout-info">
-      <h5>Welcome!</h5>
+      <h5>Welcome, {$session?.user?.username || 'Guest'}!</h5>
+      <p>
+        <strong>Status:</strong> 
+        {#if $session?.user?.is_active}
+            <span class="badge badge-success">Active</span>
+        {:else}
+            <span class="badge badge-warning">Pending/Inactive</span>
+        {/if}
+      </p>
       <p>Welcome to your network session. View traffic, device status, and profile info here.</p>
     </div>
   </div>

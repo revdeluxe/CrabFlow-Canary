@@ -1,10 +1,10 @@
 // src-tauri/src/network/cportal.rs
 
 use crate::user_management::user::{UserStore, LoginRecord};
-use crate::sysmodules::fetch;
-use crate::sysmodules::post;
+use crate::sysmodules::{fetch, post, notify};
 use crate::sysmodules::config::SetupConfig;
-use tauri::State;
+use crate::network::dns;
+use tauri::{State, AppHandle};
 use chrono::Utc;
 use std::fs;
 use dotenv::var;
@@ -62,16 +62,37 @@ pub fn set_captive_portal(enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn set_custom_portal(enabled: bool) -> Result<(), String> {
+    let mut config: SetupConfig = fetch::fetch_setup().map_err(|e| e.to_string())?;
+    config.dhcp.custom_captive_portal = enabled;
+    post::post_setup(config).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn tag_user(
+    app: AppHandle,
     user_store: State<'_, UserStore>,
     username: String,
     ip: String,
-    mac: String,
     device_name: Option<String>
 ) -> Result<(), String> {
     {
         let mut db = user_store.db.lock().map_err(|e| e.to_string())?;
         
+        // ... (MAC lookup logic stays same)
+        let mac = if ip == "127.0.0.1" || ip == "localhost" {
+            "00:00:00:00:00:00".to_string()
+        } else {
+            match crate::network::dhcp::get_mac_from_ip(&ip) {
+                Some(m) => m,
+                None => {
+                    crate::sysmodules::logging::log_warn(&format!("Tagging user {} with unknown MAC (IP: {})", username, ip));
+                    "UNKNOWN_MAC".to_string()
+                }
+            }
+        };
+
         if let Some(user) = db.users.iter_mut().find(|u| u.username == username) {
             let now = Utc::now();
             
@@ -84,14 +105,17 @@ pub async fn tag_user(
             
             user.login_history.push(record);
         } else {
-            return Err("User not found".to_string());
+            let err = format!("User not found: {}", username);
+            notify::send_notification(&app, "Authentication Failed", &err, "error");
+            return Err(err);
         }
     }
     
-    // Save database
-    user_store.persist().await?;
-    
-    Ok(())
+    // Whitelist the user so DNS stops hijacking them
+    dns::authorize_ip(ip.clone());
+
+    notify::send_notification(&app, "User Authenticated", &format!("User: {}\nIP: {}", username, ip), "success");
+    user_store.persist().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

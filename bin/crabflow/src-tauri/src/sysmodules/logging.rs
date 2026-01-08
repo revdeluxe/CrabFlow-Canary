@@ -1,16 +1,25 @@
 use crate::sysmodules::config::load_logging_config;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, Mutex};
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::mpsc::{channel, Sender};
+use std::thread;
 use dotenv::var;
 use chrono::Local;
 use serde::Serialize;
 
-static LOG_FILE_PATH: OnceLock<String> = OnceLock::new();
+static LOG_SENDER: OnceLock<Sender<LogMessage>> = OnceLock::new();
 static LOG_LEVEL: AtomicU8 = AtomicU8::new(1); // Default INFO (0=DEBUG, 1=INFO, 2=WARN, 3=ERROR)
+static MEMORY_LOGS: Mutex<Vec<LogEntry>> = Mutex::new(Vec::new());
 
-#[derive(Serialize)]
+struct LogMessage {
+    level: String,
+    message: String,
+    timestamp: String,
+}
+
+#[derive(Serialize, Clone)]
 pub struct LogEntry {
     timestamp: String,
     level: String,
@@ -31,18 +40,60 @@ pub fn init_logging() {
     dotenv::dotenv().ok();
 
     let log_dir = var("LOG_DIR").unwrap_or_else(|_| "logs".to_string());
+    let (tx, rx) = channel::<LogMessage>();
+    
+    // Initialize Sender
+    if LOG_SENDER.set(tx).is_err() {
+        eprintln!("Failed to set global logger sender");
+        return;
+    }
 
     match load_logging_config() {
         Ok(cfg) => {
             println!("Log level: {}", cfg.level);
             println!("Log file: {}", cfg.file);
-
-            let full_path = format!("{}/{}", log_dir, cfg.file);
-            // Only set if not already set, or we need a way to update it.
-            // OnceLock cannot be updated. For now assume file path doesn't change at runtime.
-            LOG_FILE_PATH.get_or_init(|| full_path);
-            
             LOG_LEVEL.store(level_str_to_u8(&cfg.level), Ordering::Relaxed);
+            
+            let file_path = format!("{}/{}", log_dir, cfg.file);
+            
+            // Spawn background logger thread
+            thread::spawn(move || {
+                // Keep file open in the thread context to avoid repeated open/close syscalls
+                let mut file_handle = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&file_path)
+                    .ok(); // Log error if fails?
+                
+                for msg in rx {
+                    // 1. Write to File
+                    if let Some(ref mut file) = file_handle {
+                         let _ = writeln!(file, "{} [{}]: {}", msg.timestamp, msg.level, msg.message);
+                    } else {
+                        // Retry opening if it failed initially or was closed?
+                        // For simplicity, try to reopen on every write if handle is missing, 
+                        // but ideally we keep it open.
+                         if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&file_path) {
+                            let _ = writeln!(f, "{} [{}]: {}", msg.timestamp, msg.level, msg.message);
+                            file_handle = Some(f);
+                         }
+                    }
+                    
+                    // 2. Write to Memory Buffer (Circular Buffer for UI)
+                    let entry = LogEntry {
+                        timestamp: msg.timestamp,
+                        level: msg.level,
+                        message: msg.message,
+                    };
+                    
+                    if let Ok(mut logs) = MEMORY_LOGS.lock() {
+                        if logs.len() >= 1000 {
+                            logs.remove(0);
+                        }
+                        logs.push(entry);
+                    }
+                }
+            });
         }
         Err(e) => eprintln!("Logging config error: {}", e),
     }
@@ -65,18 +116,50 @@ fn should_log(level: &str) -> bool {
 fn save_log_to_file(level: &str, message: &str) {
     if !should_log(level) && level != "EVENT" { return; }
 
-    if let Some(path) = LOG_FILE_PATH.get() {
-        let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(file, "{} [{}]: {}", now, level, message);
-        }
+    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    
+    if let Some(sender) = LOG_SENDER.get() {
+        let _ = sender.send(LogMessage {
+            level: level.to_string(),
+            message: message.to_string(),
+            timestamp,
+        });
+    } else {
+        // Fallback or early init logging
+        println!("[{}] {}", level, message);
     }
 }
+
+#[tauri::command]
+pub fn get_logs(limit: usize) -> Vec<LogEntry> {
+    if let Ok(logs) = MEMORY_LOGS.lock() {
+        logs.iter().rev().take(limit).cloned().collect()
+    } else {
+        vec![]
+    }
+}
+
+#[tauri::command]
+pub fn clear_logs() -> Result<(), String> {
+    if let Ok(mut logs) = MEMORY_LOGS.lock() {
+        logs.clear();
+    }
+    // Ideally clear the file too?
+    Ok(())
+}
+
 
 pub fn log_info(message: &str) {
     if should_log("INFO") {
         println!("[INFO]: {}", message);
         save_log_to_file("INFO", message);
+    }
+}
+
+pub fn log_warn(message: &str) {
+    if should_log("WARN") {
+        println!("[WARN]: {}", message);
+        save_log_to_file("WARN", message);
     }
 }
 
@@ -101,65 +184,8 @@ pub fn log_event(category: String, action: String, details: String) {
 }
 
 #[tauri::command]
-pub fn get_logs(limit: usize) -> Result<Vec<LogEntry>, String> {
-    if let Some(path) = LOG_FILE_PATH.get() {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            let lines: Vec<&str> = content.lines().collect();
-            let start = if lines.len() > limit { lines.len() - limit } else { 0 };
-            
-            let mut logs = Vec::new();
-            for line in &lines[start..] {
-                // Parse line: "YYYY-MM-DD HH:MM:SS [LEVEL]: MESSAGE"
-                let parts: Vec<&str> = line.splitn(3, ' ').collect();
-                if parts.len() >= 3 {
-                    let timestamp = format!("{} {}", parts[0], parts[1]);
-                    let level_part = parts[2]; // "[LEVEL]: MESSAGE" or just "[LEVEL]:"
-                    
-                    let level_split: Vec<&str> = level_part.splitn(2, ": ").collect();
-                    if level_split.len() == 2 {
-                        let level = level_split[0].trim_matches(|c| c == '[' || c == ']');
-                        let message = level_split[1];
-                        logs.push(LogEntry {
-                            timestamp,
-                            level: level.to_string(),
-                            message: message.to_string(),
-                        });
-                    } else {
-                        // Fallback for malformed lines
-                        logs.push(LogEntry {
-                            timestamp,
-                            level: "UNKNOWN".to_string(),
-                            message: level_part.to_string(),
-                        });
-                    }
-                } else {
-                     // Fallback for very malformed lines
-                     logs.push(LogEntry {
-                        timestamp: "".to_string(),
-                        level: "UNKNOWN".to_string(),
-                        message: line.to_string(),
-                    });
-                }
-            }
-            // Reverse to show newest first
-            logs.reverse();
-            Ok(logs)
-        } else {
-            Ok(vec![])
-        }
-    } else {
-        Ok(vec![])
-    }
+pub fn get_logs_legacy(limit: usize) -> Result<Vec<LogEntry>, String> {
+    // Deprecated: Uses memory buffer now
+    Ok(vec![])
 }
 
-#[tauri::command]
-pub fn clear_logs() -> Result<(), String> {
-    if let Some(path) = LOG_FILE_PATH.get() {
-        // Overwrite with empty string
-        std::fs::write(path, "").map_err(|e| e.to_string())?;
-        log_info("Logs cleared by user");
-        Ok(())
-    } else {
-        Err("Log file not initialized".to_string())
-    }
-}

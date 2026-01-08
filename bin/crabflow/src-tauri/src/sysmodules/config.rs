@@ -21,6 +21,8 @@ pub struct LoggingConfig {
 pub struct DhcpConfig {
     pub enabled: bool,
     pub captive_portal: bool,
+    #[serde(default)]
+    pub custom_captive_portal: bool, // New flag for custom portal editor
     pub bind_address: String, // Interface IP to bind to (e.g. 0.0.0.0 or 192.168.137.1)
     pub upstream_interface: String, // New: Interface IP to use for outbound forwarding
     pub range_start: String,
@@ -34,8 +36,9 @@ pub struct DhcpConfig {
 impl Default for DhcpConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             captive_portal: false,
+            custom_captive_portal: false,
             bind_address: "0.0.0.0".into(),
             upstream_interface: "0.0.0.0".into(),
             range_start: "192.168.1.100".into(),
@@ -80,6 +83,23 @@ impl Default for DnsConfig {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AdvancedConfig {
+    pub dns_read_timeout_ms: u64,
+    pub dhcp_lease_duration_sec: u64,
+    pub captive_portal_domain: String,
+}
+
+impl Default for AdvancedConfig {
+    fn default() -> Self {
+        Self {
+            dns_read_timeout_ms: 2000,
+            dhcp_lease_duration_sec: 7200,
+            captive_portal_domain: "portal.crabflow.local".into(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SetupConfig {
     pub hostname: String,
@@ -96,6 +116,8 @@ pub struct SetupConfig {
     pub dns: DnsConfig,
     #[serde(default)]
     pub hotspot: HotspotConfig,
+    #[serde(default)]
+    pub advanced: AdvancedConfig,
 }
 
 fn default_monitor_interval() -> u64 {
@@ -155,9 +177,14 @@ pub fn load_setup_config() -> Result<SetupConfig, String> {
             telemetry: false,
             first_run: true,
             monitor_interval: 5000,
-            dhcp: DhcpConfig::default(),
+            dhcp: DhcpConfig {
+                enabled: true,
+                custom_captive_portal: false,
+                ..DhcpConfig::default()
+            },
             dns: DnsConfig::default(),
             hotspot: HotspotConfig::default(),
+            advanced: AdvancedConfig::default(),
         });
     }
 
@@ -191,9 +218,14 @@ pub fn reset_setup_config() -> Result<(), String> {
         telemetry: false,
         first_run: true,
         monitor_interval: 5000,
-        dhcp: DhcpConfig::default(),
+        dhcp: DhcpConfig {
+            enabled: true,
+            custom_captive_portal: false,
+            ..DhcpConfig::default()
+        },
         dns: DnsConfig::default(),
         hotspot: HotspotConfig::default(),
+        advanced: AdvancedConfig::default(),
     };
     let json = serde_json::to_string_pretty(&default).map_err(|e| e.to_string())?;
     fs::write(path, json).map_err(|e| e.to_string())

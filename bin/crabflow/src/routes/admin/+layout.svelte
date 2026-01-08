@@ -171,6 +171,13 @@
             </a>
           </li>
 
+          <li class="nav-item">
+            <a href="/admin/portal-editor" class="nav-link" class:active={$page.url.pathname.includes('/admin/portal-editor')}>
+              <i class="nav-icon fas fa-edit"></i>
+              <p>Portal Editor</p>
+            </a>
+          </li>
+
           <li class="nav-header">SYSTEM</li>
 
           <li class="nav-item">

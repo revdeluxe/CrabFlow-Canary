@@ -103,19 +103,25 @@ async fn login_handler(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> Json<LoginResponse> {
+    logging::log_info(&format!("Login attempt for user: {}", req.username));
+
     let db = match state.user_store.db.lock() {
         Ok(db) => db,
-        Err(_) => return Json(LoginResponse {
-            success: false,
-            message: "Database lock error".to_string(),
-            token: None,
-            user: None,
-        }),
+        Err(_) => {
+            logging::log_error("Failed to lock user database");
+            return Json(LoginResponse {
+                success: false,
+                message: "Database lock error".to_string(),
+                token: None,
+                user: None,
+            });
+        }
     };
 
     if let Some(user) = db.users.iter().find(|u| u.username == req.username) {
         if user.password_hash == req.password {
              if !user.is_active {
+                logging::log_warn(&format!("Login failed: Account disabled for {}", req.username));
                 return Json(LoginResponse {
                     success: false,
                     message: "Account is disabled".to_string(),
@@ -124,6 +130,7 @@ async fn login_handler(
                 });
             }
             if !user.is_approved {
+                logging::log_warn(&format!("Login failed: Account pending approval for {}", req.username));
                 return Json(LoginResponse {
                     success: false,
                     message: "Account is pending approval".to_string(),
@@ -133,8 +140,21 @@ async fn login_handler(
             }
 
             let token = Uuid::new_v4().to_string();
-            if let Ok(mut sessions) = state.session_store.sessions.lock() {
-                sessions.insert(token.clone(), user.clone());
+            match state.session_store.sessions.lock() {
+                Ok(mut sessions) => {
+                    sessions.insert(token.clone(), user.clone());
+                    logging::log_info(&format!("Login successful for {}", req.username));
+                }
+                Err(e) => {
+                    logging::log_error(&format!("Failed to lock session store: {}", e));
+                    // Even if session store fails, we shouldn't crash, but login fails effectively
+                    return Json(LoginResponse {
+                        success: false,
+                        message: "Session store error".to_string(),
+                        token: None,
+                        user: None,
+                    });
+                }
             }
 
             return Json(LoginResponse {
@@ -143,7 +163,11 @@ async fn login_handler(
                 token: Some(token),
                 user: Some(user.clone()),
             });
+        } else {
+            logging::log_warn(&format!("Login failed: Invalid password for {}", req.username));
         }
+    } else {
+        logging::log_warn(&format!("Login failed: User not found {}", req.username));
     }
 
     Json(LoginResponse {
@@ -153,6 +177,8 @@ async fn login_handler(
         user: None,
     })
 }
+
+use crate::user_management::permission::Role;
 
 async fn register_handler(
     State(state): State<AppState>,
@@ -179,7 +205,7 @@ async fn register_handler(
             nickname: None,
             email: None,
             password_hash: password,
-            role: "user".to_string(),
+            role: Role::Guest,
             groups: vec![],
             is_active: true,
             is_approved: auto_approve,
@@ -200,6 +226,8 @@ async fn register_handler(
 }
 
 async fn list_users_handler(State(state): State<AppState>) -> Json<Vec<User>> {
-    let db = state.user_store.db.lock().unwrap();
-    Json(db.users.clone())
+    match state.user_store.db.lock() {
+        Ok(db) => Json(db.users.clone()),
+        Err(_) => Json(vec![]) // Return empty list on error instead of panic
+    }
 }

@@ -14,6 +14,7 @@
     dhcp: {
       enabled: false,
       captive_portal: false,
+      custom_captive_portal: false,
       bind_address: "0.0.0.0",
       range_start: "192.168.1.100",
       range_end: "192.168.1.200",
@@ -61,6 +62,7 @@
         setupConfig.dhcp = {
           enabled: false,
           captive_portal: false,
+          custom_captive_portal: false,
           bind_address: "0.0.0.0",
           upstream_interface: "0.0.0.0",
           range_start: "192.168.1.100",
@@ -271,7 +273,11 @@
                     <input type="checkbox" class="custom-control-input" id="cportalSwitch" bind:checked={setupConfig.dhcp.captive_portal}>
                     <label class="custom-control-label" for="cportalSwitch">Enable Captive Portal (Forces DNS to Gateway)</label>
                   </div>
-                  <div class="mt-2">
+                  <div class="custom-control custom-switch mt-2">
+                    <input type="checkbox" class="custom-control-input" id="customCportalSwitch" bind:checked={setupConfig.dhcp.custom_captive_portal}>
+                    <label class="custom-control-label" for="customCportalSwitch">Enable Custom Portal Page</label>
+                  </div>
+                  <div class="mt-2" style:display={setupConfig.dhcp.captive_portal && setupConfig.dhcp.custom_captive_portal ? 'block' : 'none'}>
                     <a href="/admin/portal-editor" class="btn btn-sm btn-outline-primary">
                         <i class="fas fa-edit"></i> Customize Portal Page
                     </a>

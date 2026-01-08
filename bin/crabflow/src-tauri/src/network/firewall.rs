@@ -1,6 +1,6 @@
 // src-tauri/src/network/firewall.rs
 use serde::{Serialize, Deserialize};
-use crate::sysmodules::{fetch, post, logging};
+use crate::sysmodules::{fetch, post, logging, paths};
 use std::sync::{Arc, Mutex};
 use lazy_static::lazy_static;
 use uuid::Uuid;
@@ -29,7 +29,7 @@ lazy_static! {
 }
 
 fn get_firewall_file() -> String {
-    dotenv::var("CRABFLOW_FIREWALL_CONFIG").unwrap_or_else(|_| "firewall.json".to_string())
+    paths::get_config_path("firewall.json").to_string_lossy().to_string()
 }
 
 pub fn init_firewall() {

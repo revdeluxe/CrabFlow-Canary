@@ -19,6 +19,9 @@ use user_management::auth::SessionStore;
 use sysinfo::System;
 use is_elevated::is_elevated;
 
+// Import tracing subscriber
+use tracing_subscriber;
+
 #[tauri::command]
 fn begin_setup(window: Window) {
     // do setup logic...
@@ -76,8 +79,14 @@ fn main() {
     }
 
     dotenv::dotenv().ok();
+
+    // Initialize Tracing for SurrealDB
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG) // Adjust to TRACE if needed
+        .init();
+
     sysmodules::logging::init_logging(); 
-    network::init::initialize_networking(); 
+    // Networking initialization moved to setup to access AppHandle
     user_management::init::initialize_user_management(); 
     
     let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
@@ -102,6 +111,9 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
+            let handle = app.handle();
+            network::init::initialize_networking(Some(handle.clone()));
+
             let user_store = app.state::<UserStore>().inner().clone();
             let session_store = app.state::<SessionStore>().inner().clone();
             
@@ -123,6 +135,7 @@ fn main() {
             // Setup
             setup::wizard::save_setup,
             setup::wizard::load_setup,
+            setup::wizard::get_wizard_status,
             setup::wizard::check_setup,
             setup::wizard::check_first_run,
             setup::wizard::reset_setup,
@@ -155,6 +168,7 @@ fn main() {
 
             // Network Monitor
             network::monitor::get_system_status,
+            network::monitor::get_live_stats,
             network::monitor::start_wlan_monitoring,
             network::monitor::list_interfaces,
 
@@ -176,6 +190,7 @@ fn main() {
             network::cportal::tag_user,
             network::cportal::get_user_history,
             network::cportal::set_captive_portal,
+            network::cportal::set_custom_portal,
             network::cportal::get_portal_template,
             network::cportal::save_portal_template,
 

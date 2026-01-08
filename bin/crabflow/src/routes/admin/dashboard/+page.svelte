@@ -7,6 +7,14 @@
   let leasesCount = 0
   let recordsCount = 0
   let dnsStats = { total: 0, blocked: 0, percentage: 0 }
+  
+  let liveStats = {
+      dhcp_clients: 0,
+      dns_queries_total: 0,
+      active_users: 0,
+      services_status: { dhcp: false, dns: false }
+  };
+
   let systemStatus = {
     cpu_usage: 0,
     memory_usage: 0,
@@ -34,8 +42,8 @@
 
   async function refresh() {
     try {
-      const leases = await api.listLeases()
-      leasesCount = leases.length
+      liveStats = await invoke('get_live_stats');
+      leasesCount = liveStats.dhcp_clients;
 
       const records = await api.listRecords()
       recordsCount = records.length
@@ -44,14 +52,14 @@
       interfaces = await api.listInterfaces()
       
       const config = await api.loadSetup()
-      dhcpActive = config.dhcp && config.dhcp.enabled
+      dhcpActive = liveStats.services_status.dhcp;
 
       // DNS Stats
-      const logs = await invoke("get_query_logs", { limit: 1000 })
-      const total = logs.length
-      const blocked = logs.filter(l => l.status === 'Blocked').length
-      const percentage = total > 0 ? ((blocked / total) * 100).toFixed(1) : 0
-      dnsStats = { total, blocked, percentage }
+      dnsStats = { 
+          total: liveStats.dns_queries_total, 
+          blocked: 0, // Need backend support for blocked count specifically if wanted separate
+          percentage: 0 
+      };
 
       updateCharts()
     } catch (e) {
@@ -160,14 +168,7 @@
     setTimeout(initCharts, 500)
     
     refresh()
-    try {
-      const config = await api.loadSetup()
-      const updateFreq = config.monitor_interval || 5000
-      interval = setInterval(refresh, updateFreq)
-    } catch (e) {
-      console.error("Failed to load config for interval:", e)
-      interval = setInterval(refresh, 5000)
-    }
+    interval = setInterval(refresh, 2000)
   })
 
   onDestroy(() => {
@@ -244,6 +245,9 @@
       <div class="inner">
         <h3>{leasesCount}</h3>
         <p>DHCP Clients</p>
+        <span class="{liveStats.services_status.dhcp ? 'text-white' : 'text-danger'}">
+            <i class="fas fa-circle"></i> {liveStats.services_status.dhcp ? ' Running' : ' Stopped'}
+        </span>
       </div>
       <div class="icon">
         <i class="fas fa-laptop"></i>
@@ -258,6 +262,9 @@
       <div class="inner">
         <h3>{recordsCount}</h3>
         <p>DNS Records</p>
+         <span class="{liveStats.services_status.dns ? 'text-white' : 'text-danger'}">
+            <i class="fas fa-circle"></i> {liveStats.services_status.dns ? ' Running' : ' Stopped'}
+        </span>
       </div>
       <div class="icon">
         <i class="fas fa-globe"></i>

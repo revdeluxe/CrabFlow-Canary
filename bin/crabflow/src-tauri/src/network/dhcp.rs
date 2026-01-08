@@ -1,7 +1,8 @@
 // src-tauri/src/dhcp.rs
 
 use serde::{Serialize, Deserialize};
-use crate::sysmodules::{fetch, post, logging, config};
+use crate::sysmodules::{fetch, post, logging, config, notify, paths};
+use tauri::AppHandle;
 use dotenv::var;
 use std::net::UdpSocket;
 use std::thread;
@@ -28,7 +29,7 @@ pub struct LeaseInput {
 }
 
 fn get_leases_file() -> String {
-    var("CRABFLOW_DHCP_CONFIG").unwrap_or_else(|_| "leases.json".to_string())
+    paths::get_config_path("leases.json").to_string_lossy().to_string()
 }
 
 /// List all DHCP leases
@@ -46,6 +47,14 @@ pub fn is_ip_leased(ip: &str) -> bool {
     // Simple check: is IP in the list and not expired? 
     // For now just check existence.
     leases.iter().any(|l| l.ip == ip)
+}
+
+/// Retrieve the MAC address for a given IP from the active leases
+pub fn get_mac_from_ip(target_ip: &str) -> Option<String> {
+    let leases = list_leases();
+    leases.into_iter()
+        .find(|l| l.ip == target_ip)
+        .map(|l| l.mac)
 }
 
 /// Add a static lease
@@ -90,7 +99,11 @@ pub fn stop_dhcp_server() {
     }
 }
 
-pub fn start_dhcp_server() {
+pub fn is_server_running() -> bool {
+    DHCP_RUNNING.load(Ordering::Relaxed)
+}
+
+pub fn start_dhcp_server(app_handle: Option<AppHandle>) {
     if DHCP_RUNNING.load(Ordering::Relaxed) {
         logging::log_info("DHCP Server is already running.");
         return;
@@ -111,6 +124,7 @@ pub fn start_dhcp_server() {
     }
 
     DHCP_RUNNING.store(true, Ordering::Relaxed);
+    let app = app_handle.clone();
 
     thread::spawn(move || {
         let bind_addr = config.dhcp.bind_address;
@@ -119,7 +133,11 @@ pub fn start_dhcp_server() {
         let socket = match UdpSocket::bind(&bind_endpoint) {
             Ok(s) => s,
             Err(e) => {
-                logging::log_error(&format!("Failed to bind DHCP server to {}: {}", bind_endpoint, e));
+                let err_msg = format!("Failed to bind DHCP server to {}: {}", bind_endpoint, e);
+                logging::log_error(&err_msg);
+                if let Some(h) = &app {
+                    notify::send_notification(h, "DHCP Error", &err_msg, "error");
+                }
                 DHCP_RUNNING.store(false, Ordering::Relaxed);
                 return;
             }
@@ -129,13 +147,16 @@ pub fn start_dhcp_server() {
         socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap_or_else(|e| logging::log_error(&format!("Failed to set read timeout: {}", e)));
         
         logging::log_info(&format!("DHCP Server started on {}", bind_endpoint));
+        if let Some(h) = &app {
+            notify::send_notification(h, "DHCP Started", &format!("Listening on {}", bind_endpoint), "success");
+        }
 
         let mut buf = [0u8; 1500];
         while DHCP_RUNNING.load(Ordering::Relaxed) {
             match socket.recv_from(&mut buf) {
                 Ok((amt, src)) => {
                     let packet = &buf[..amt];
-                    handle_dhcp_packet(&socket, packet, src);
+                    handle_dhcp_packet(&socket, packet, src, &app);
                 }
                 Err(e) => {
                     if e.kind() != std::io::ErrorKind::WouldBlock && e.kind() != std::io::ErrorKind::TimedOut {
@@ -148,7 +169,7 @@ pub fn start_dhcp_server() {
     });
 }
 
-fn handle_dhcp_packet(socket: &UdpSocket, packet: &[u8], _src: std::net::SocketAddr) {
+fn handle_dhcp_packet(socket: &UdpSocket, packet: &[u8], _src: std::net::SocketAddr, app: &Option<AppHandle>) {
     // Basic validation (Op=1 BootRequest, Hlen=6, Magic Cookie)
     if packet.len() < 240 || packet[0] != 1 || packet[2] != 6 {
         return;
@@ -207,7 +228,11 @@ fn handle_dhcp_packet(socket: &UdpSocket, packet: &[u8], _src: std::net::SocketA
             send_dhcp_reply(socket, packet, xid, &ip, &mac_bytes, response_type, &setup.dhcp);
             
             if response_type == 5 {
-                logging::log_info(&format!("DHCP ACK sent to {} ({})", ip, mac_str));
+                let msg = format!("New Lease: {} ({}) - {}", hostname, ip, mac_str);
+                logging::log_info(&msg);
+                if let Some(h) = app {
+                    notify::send_notification(h, "DHCP Lease", &msg, "info");
+                }
             } else {
                 logging::log_info(&format!("DHCP OFFER sent to {} ({})", ip, mac_str));
             }

@@ -2,6 +2,7 @@ use serde::{Serialize, Deserialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::State;
+use crate::user_management::permission::Role;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LoginRecord {
@@ -26,7 +27,7 @@ pub struct User {
     #[serde(default)]
     pub email: Option<String>,
     pub password_hash: String, // In a real app, use bcrypt/argon2
-    pub role: String, // "admin", "user", "guest"
+    pub role: Role, // "admin", "user", "guest"
     pub groups: Vec<String>,
     pub is_active: bool,
     pub is_approved: bool,
@@ -136,7 +137,7 @@ impl Default for UserDatabase {
                     nickname: Some("Administrator".to_string()),
                     email: Some("admin@example.com".to_string()),
                     password_hash: "admin".to_string(), // Default password
-                    role: "admin".to_string(),
+                    role: Role::Admin,
                     groups: vec!["admin".to_string()],
                     is_active: true,
                     is_approved: true,

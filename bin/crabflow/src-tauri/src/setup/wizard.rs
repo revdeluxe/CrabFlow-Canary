@@ -4,9 +4,49 @@ use std::fs;
 use std::path::PathBuf;
 use dotenv::var;
 use crate::sysmodules::config::{get_project_root, DhcpConfig, SetupConfig};
+use crate::sysmodules::paths;
 
-fn default_monitor_interval() -> u64 {
-    5000
+#[derive(Serialize)]
+pub struct WizardStatus {
+    pub config: Option<SetupConfig>,
+    pub data_location: String,
+    pub is_configured: bool,
+}
+
+#[tauri::command]
+pub fn get_wizard_status() -> Result<WizardStatus, String> {
+    let path = paths::get_config_path("crabflow_config.json");
+    let data_location = paths::get_data_dir().to_string_lossy().to_string();
+    
+    if path.exists() {
+        match fs::read_to_string(&path) {
+            Ok(data) => {
+                match serde_json::from_str::<SetupConfig>(&data) {
+                    Ok(config) => Ok(WizardStatus {
+                        is_configured: !config.first_run,
+                        config: Some(config),
+                        data_location,
+                    }),
+                    Err(_) => Ok(WizardStatus {
+                        is_configured: false,
+                        config: None,
+                        data_location,
+                    })
+                }
+            },
+            Err(_) => Ok(WizardStatus {
+                is_configured: false,
+                config: None,
+                data_location,
+            })
+        }
+    } else {
+         Ok(WizardStatus {
+            is_configured: false,
+            config: None,
+            data_location,
+        })
+    }
 }
 
 /// Strict config content checker
@@ -21,10 +61,7 @@ pub fn validate_config(config: SetupConfig) -> bool {
 
 /// Resolve config path under OS-specific config dir
 fn config_path() -> PathBuf {
-    let root = get_project_root();
-    let config_dir = var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
-    let config_file = var("CRABFLOW_CONFIG").unwrap_or_else(|_| "crabflow_config.json".to_string());
-    root.join(config_dir).join(config_file)
+    paths::get_config_path("crabflow_config.json")
 }
 
 /// Save setup config to disk

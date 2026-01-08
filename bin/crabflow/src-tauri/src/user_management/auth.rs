@@ -1,5 +1,6 @@
 use tauri::State;
 use crate::user_management::user::{UserStore, User};
+use crate::user_management::permission::{Role, Permission, check_access};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -96,6 +97,34 @@ pub fn check_auth(session_store: State<SessionStore>, token: String) -> Result<O
     Ok(sessions.get(&token).cloned())
 }
 
+pub fn require_permission(session_store: &Arc<Mutex<HashMap<String, User>>>, token: &str, required: Permission) -> Result<(), String> {
+    let sessions = session_store.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(user) = sessions.get(token) {
+        if check_access(&user.role, &required) {
+            Ok(())
+        } else {
+             Err(format!("Unauthorized: Missing permission {:?}", required))
+        }
+    } else {
+        Err("Unauthorized: Invalid session".to_string())
+    }
+}
+
+pub fn require_admin_privileges(session_store: &Arc<Mutex<HashMap<String, User>>>, token: &str) -> Result<(), String> {
+    let sessions = session_store.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(user) = sessions.get(token) {
+        if user.role == Role::Admin {
+            Ok(())
+        } else {
+            Err("Unauthorized: Admin privileges required".to_string())
+        }
+    } else {
+        Err("Unauthorized: Invalid session".to_string())
+    }
+}
+
 #[tauri::command]
 pub fn get_online_users(session_store: State<SessionStore>) -> Result<Vec<User>, String> {
     let sessions = session_store.sessions.lock().map_err(|e| e.to_string())?;
@@ -120,7 +149,7 @@ pub async fn register_user(store: State<'_, UserStore>, username: String, passwo
             nickname: None,
             email: None,
             password_hash: password, // Hash this in production!
-            role: "user".to_string(),
+            role: Role::Guest,
             groups: vec![],
             is_active: true,
             is_approved: auto_approve,

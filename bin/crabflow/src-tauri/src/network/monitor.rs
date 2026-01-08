@@ -2,6 +2,8 @@
 use serde::{Serialize, Deserialize};
 use std::process::Command;
 use crate::sysmodules::logging;
+use crate::network::{dhcp, dns};
+use crate::user_management::auth::SessionStore;
 use tauri::State;
 use std::sync::Mutex;
 use sysinfo::{System, Networks};
@@ -47,6 +49,152 @@ pub struct NetworkInterface {
     pub ips: Vec<String>,
     pub mac: String,
     pub is_primary: bool,
+}
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::thread;
+use std::time::Duration;
+
+static LOGGING_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LiveServiceStats {
+    pub dhcp_clients: usize,
+    pub dns_queries_total: usize,
+    pub active_users: usize,
+    pub services_status: HashMap<String, bool>,
+}
+
+#[tauri::command]
+pub fn get_live_stats(session_store: State<SessionStore>) -> LiveServiceStats {
+    let dhcp_clients = dhcp::list_leases().len();
+    let dns_queries_total = dns::get_query_count();
+    
+    let mut services = HashMap::new();
+    services.insert("dhcp".to_string(), dhcp::is_server_running());
+    services.insert("dns".to_string(), dns::is_server_running());
+    
+    let active_users = match session_store.sessions.lock() {
+        Ok(sessions) => sessions.len(),
+        Err(_) => 0,
+    };
+
+    LiveServiceStats {
+        dhcp_clients,
+        dns_queries_total,
+        active_users,
+        services_status: services,
+    }
+}
+
+#[tauri::command]
+pub fn start_performance_logging(filename: String, state_sys: State<'static, Mutex<System>>, state_net: State<'static, Mutex<Networks>>) {
+    if LOGGING_ACTIVE.load(Ordering::Relaxed) {
+        return;
+    }
+    LOGGING_ACTIVE.store(true, Ordering::Relaxed);
+    
+    // We need to clone the states to pass them to the thread
+    // Wait, State is essentially an wrapper around Arc<T>, but we can't clone State directly in way that works easily in thread spawn unless we use inner().
+    // However, the State<T> passed here argument is defined in the command.
+    // We can't pass 'state' directly to thread. 
+    // We need Arc<Mutex<System>>. State implements Deref, but to move to thread we need the Arc.
+    // state.inner() gives &T. 
+    // Actually, in Tauri v1/v2, State<T> can be cloned if we specifically use the right type.
+    // The main.rs manages `Mutex<System>`. So State<Mutex<System>> is actually holding a reference? No it holds Arc.
+    // `state.inner()` returns `&Mutex<System>`. 
+    // We need the `Arc` to move it. 
+    // But we cannot get the Arc back from `State`. 
+    // Wait, in previous edits we changed main.rs to manage `Arc<Mutex<System>>`?
+    // Let's check main.rs again. `manage(Mutex::new(System::new_all()))`.
+    // So Tauri holds `Arc<Mutex<System>>` internally, but exposed as `State<Mutex<System>>`.
+    // We cannot clone the Arc from the State.
+    // 
+    // Workaround: We can't access Tauri state inside a detached thread easily unless we pass the Arc ourselves.
+    // BUT we can't get the Arc. 
+    //
+    // Actually, the user asked to "spawn a background thread". 
+    // If we can't share the existing State `System`, we might need to create a new `System` instance?
+    // "get_system_status_impl" takes `&mut System`.
+    // 
+    // Let's look at `http_server.rs`. It holds `Arc<Mutex<System>>`.
+    // In `main.rs`, we do `.manage(Mutex::new(..))`.
+    //
+    // If we want to use the same `System` object (to avoid overhead), we should probably Wrap it in Arc before passing to manage.
+    // `main.rs`: `.manage(Arc::new(Mutex::new(System::new_all())))`.  <-- This would change the type to `State<Arc<Mutex<System>>>`.
+    //
+    // Let's assume for this task, creating a *new* System instance locally in the thread is acceptable, 
+    // OR we change main.rs to manage Arc.
+    // Given the prompt "get_system_status_impl ... to get current stats", it implies using the main system struct.
+    // 
+    // Let's try to assume we can just create a `System` inside the thread for logging. 
+    // It's cleaner than refactoring the whole app state type.
+    // EXCEPT `get_traffic_summary` uses `Networks`.
+    
+    thread::spawn(move || {
+        let mut sys = System::new_all();
+        let mut networks = Networks::new_with_refreshed_list();
+        
+        // Open file
+        let mut file = match OpenOptions::new().create(true).append(true).open(&filename) {
+            Ok(f) => f,
+            Err(e) => {
+                logging::log_error(&format!("Failed to open log file: {}", e));
+                return;
+            }
+        };
+
+        // Write header if empty
+        if let Ok(metadata) = file.metadata() {
+            if metadata.len() == 0 {
+                if let Err(_) = writeln!(file, "timestamp,cpu_usage,memory_percentage,total_bytes_rx,total_bytes_tx") {
+                     logging::log_error("Failed to write CSV header");
+                }
+            }
+        }
+
+        while LOGGING_ACTIVE.load(Ordering::Relaxed) {
+             // Refresh & Get Data
+             sys.refresh_all();
+             networks.refresh_list();
+             networks.refresh();
+
+             // CPU
+             let cpu_usage = sys.global_cpu_info().cpu_usage();
+             
+             // Memory
+             let total_mem = sys.total_memory();
+             let used_mem = sys.used_memory();
+             let mem_pct = if total_mem > 0 {
+                 (used_mem as f32 / total_mem as f32) * 100.0
+             } else {
+                 0.0
+             };
+
+             // Traffic
+             let mut total_rx = 0;
+             let mut total_tx = 0;
+             for (_name, data) in &networks {
+                 total_rx += data.total_received();
+                 total_tx += data.total_transmitted();
+             }
+
+             let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+             if let Err(e) = writeln!(file, "{},{},{},{},{}", ts, cpu_usage, mem_pct, total_rx, total_tx) {
+                 logging::log_error(&format!("Failed to write log entry: {}", e));
+             }
+
+             thread::sleep(Duration::from_secs(1));
+        }
+    });
+}
+
+#[tauri::command]
+pub fn stop_performance_logging() {
+    LOGGING_ACTIVE.store(false, Ordering::Relaxed);
 }
 
 /// Check internet connection quality (simple ping)

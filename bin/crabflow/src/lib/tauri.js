@@ -46,6 +46,7 @@ async function request(endpoint, method = "GET", body = null) {
 
 export const api = {
   // Setup
+  getWizardStatus: async () => await invoke('get_wizard_status'),
   checkFirstRun: async () => await invoke('check_first_run'),
   saveSetup: async (config) => await invoke('save_setup', { config }),
   loadSetup: async () => await invoke('load_setup'),
@@ -88,10 +89,11 @@ export const api = {
   stopHotspot: async () => await invoke('stop_hotspot'),
 
   // Captive Portal & History
-  tagUser: async (username, ip, mac, deviceName) => await invoke('tag_user', { username, ip, mac, deviceName }),
+  tagUser: async (username, ip, deviceName) => await invoke('tag_user', { username, ip, deviceName }),
   getUserHistory: async (username) => await invoke('get_user_history', { username }),
   uploadId: async (username, filePath) => await invoke('upload_id', { username, filePath }),
   setCaptivePortal: async (enabled) => await invoke('set_captive_portal', { enabled }),
+  setCustomPortal: async (enabled) => await invoke('set_custom_portal', { enabled }),
   getPortalTemplate: async () => await invoke('get_portal_template'),
   savePortalTemplate: async (content) => await invoke('save_portal_template', { content }),
 

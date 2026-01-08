@@ -14,9 +14,13 @@ let loading = false
 let interfaces = []
 let bindAddress = "0.0.0.0"
 let upstreamInterface = "0.0.0.0"
+let dataLocation = "Loading..."
 
 onMount(async () => {
     try {
+        const status = await api.getWizardStatus();
+        dataLocation = status.data_location;
+
         interfaces = await api.listInterfaces()
         // Auto-select primary interface for upstream
         const primary = interfaces.find(i => i.is_primary);
@@ -46,6 +50,7 @@ async function finish() {
       dhcp: {
           enabled: false,
           captive_portal: false,
+          custom_captive_portal: false,
           bind_address: bindAddress,
           upstream_interface: upstreamInterface,
           range_start: "192.168.1.100",
@@ -90,6 +95,11 @@ async function finish() {
         {#if step === 1}
             <p class="login-box-msg">Welcome to CrabFlow</p>
             <p class="text-center mb-4">This wizard will guide you through the initial configuration of your SDN controller.</p>
+            
+            <div class="alert alert-info">
+                <small>Data Location: {dataLocation}</small>
+            </div>
+
             <div class="row">
                 <div class="col-12">
                     <button class="btn btn-primary btn-block" on:click={next}>Begin Setup</button>

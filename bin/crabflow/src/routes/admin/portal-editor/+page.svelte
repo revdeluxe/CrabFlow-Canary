@@ -1,16 +1,23 @@
 <script>
   import { api } from '$lib/tauri'
   import { onMount } from 'svelte'
+  import { goto } from '$app/navigation'
 
   let templateContent = ""
   let loading = true
   let saving = false
+  let restricted = false
 
   onMount(async () => {
     try {
+      const config = await api.loadSetup()
+      if (!config.dhcp.captive_portal || !config.dhcp.custom_captive_portal) {
+          restricted = true
+      }
+      
       templateContent = await api.getPortalTemplate()
     } catch (e) {
-      alert("Failed to load template: " + e)
+      alert("Failed to load template/config: " + e)
     } finally {
       loading = false
     }
@@ -76,6 +83,15 @@
 
 <section class="content">
   <div class="container-fluid">
+    {#if loading}
+        <p>Loading...</p>
+    {:else if restricted}
+        <div class="alert alert-warning">
+            <h5><i class="icon fas fa-exclamation-triangle"></i> Access Denied</h5>
+            <p>The Custom Portal Editor is only available when <strong>Captive Portal</strong> AND <strong>Custom Portal Page</strong> are enabled in settings.</p>
+            <button class="btn btn-primary" on:click={() => goto("/admin/settings")}>Go to Settings</button>
+        </div>
+    {:else}
     <div class="card card-primary card-outline">
       <div class="card-header">
         <h3 class="card-title">HTML Template Editor</h3>
@@ -109,5 +125,6 @@
         <a href="/admin/settings" class="btn btn-default float-right">Back to Settings</a>
       </div>
     </div>
+    {/if}
   </div>
 </section>

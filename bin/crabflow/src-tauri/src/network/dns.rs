@@ -1,8 +1,9 @@
 // src-tauri/src/dns.rs
 
 use serde::{Serialize, Deserialize};
-use crate::sysmodules::{fetch, post, logging, config};
+use crate::sysmodules::{fetch, post, logging, config, notify, paths};
 use crate::network::dhcp;
+use tauri::AppHandle;
 use dotenv::var;
 use std::net::UdpSocket;
 use std::thread;
@@ -27,6 +28,7 @@ lazy_static! {
     static ref QUERY_LOG: Mutex<VecDeque<DnsQueryLog>> = Mutex::new(VecDeque::new());
     static ref BLACKLIST_CACHE: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
     static ref RECORDS_CACHE: RwLock<Vec<DnsRecord>> = RwLock::new(Vec::new());
+    static ref AUTHENTICATED_IPS: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
     // Default upstream, can be made configurable later
     static ref UPSTREAM_DNS: RwLock<Vec<String>> = RwLock::new(vec!["1.1.1.1:53".to_string(), "8.8.8.8:53".to_string()]);
     static ref UPSTREAM_INTERFACE: RwLock<String> = RwLock::new("0.0.0.0".to_string());
@@ -48,8 +50,14 @@ pub struct DnsRecordInput {
     pub ttl: u32,
 }
 
+pub fn authorize_ip(ip: String) {
+    let mut cache = AUTHENTICATED_IPS.write().unwrap();
+    cache.insert(ip.clone());
+    logging::log_info(&format!("Authorized IP for Internet: {}", ip));
+}
+
 fn get_dns_file() -> String {
-    var("CRABFLOW_DNS_CONFIG").unwrap_or_else(|_| "dns.json".to_string())
+    paths::get_config_path("dns.json").to_string_lossy().to_string()
 }
 
 /// Initialize caches from disk
@@ -139,7 +147,16 @@ pub fn stop_dns_server() {
     }
 }
 
-pub fn start_dns_server() {
+pub fn is_server_running() -> bool {
+    DNS_RUNNING.load(Ordering::Relaxed)
+}
+
+pub fn get_query_count() -> usize {
+    let logs = QUERY_LOG.lock().unwrap();
+    logs.len()
+}
+
+pub fn start_dns_server(app_handle: Option<AppHandle>) {
     if DNS_RUNNING.load(Ordering::Relaxed) {
         logging::log_info("DNS Server is already running.");
         return;
@@ -147,14 +164,45 @@ pub fn start_dns_server() {
 
     // Initialize caches before starting
     init_dns_caches();
+    
+    // Ensure Gateway FQDN for Captive Portal
+    match fetch::fetch_setup() {
+        Ok(cfg) => {
+             let fqdn = if cfg.advanced.captive_portal_domain.is_empty() { 
+                 "crabflow.login".to_string() 
+             } else { 
+                 cfg.advanced.captive_portal_domain 
+             };
+             
+             // Inject Record for Gateway IP
+             // Assuming Gateway IP matches the DHCP server IP
+             let gateway_ip = cfg.dhcp.gateway;
+             logging::log_info(&format!("Injecting DNS A record: {} -> {}", fqdn, gateway_ip));
+             
+             let _ = add_record(DnsRecordInput {
+                 name: fqdn,
+                 rtype: "A".to_string(),
+                 value: gateway_ip,
+                 ttl: 300,
+             });
+        },
+        Err(e) => {
+            logging::log_warn(&format!("Could not load setup for DNS FQDN injection: {}", e));
+        }
+    }
 
     DNS_RUNNING.store(true, Ordering::Relaxed);
+    let app = app_handle.clone();
 
-    thread::spawn(|| {
+    thread::spawn(move || {
         let socket = match UdpSocket::bind("0.0.0.0:53") {
             Ok(s) => s,
             Err(e) => {
-                logging::log_error(&format!("Failed to bind DNS server to port 53: {}", e));
+                let err_msg = format!("Failed to bind DNS server to port 53: {}", e);
+                logging::log_error(&err_msg);
+                if let Some(h) = &app {
+                    notify::send_notification(h, "DNS Server Error", &err_msg, "error");
+                }
                 DNS_RUNNING.store(false, Ordering::Relaxed);
                 return;
             }
@@ -162,6 +210,9 @@ pub fn start_dns_server() {
 
         socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap_or_else(|e| logging::log_error(&format!("Failed to set read timeout: {}", e)));
         logging::log_info("DNS Server started on port 53");
+        if let Some(h) = &app {
+            notify::send_notification(h, "DNS Server Started", "Listening on port 53", "success");
+        }
 
         let mut buf = [0u8; 512];
         // Cache config to avoid reading disk on every packet
@@ -201,7 +252,12 @@ pub fn start_dns_server() {
                     // ID (2), Flags (2). Flags 0x0100 (Standard Query)
                     // We just respond to everything with a basic handler for now.
                     
-                    if let Some((response, domain, status)) = handle_dns_query(query) {
+                    if let Some((response, domain, status)) = handle_dns_query(query, &src_ip) {
+                        if status == "Blocked" {
+                             if let Some(h) = &app {
+                                notify::send_notification(h, "DNS Blocked", &format!("Access to {} blocked from {}", domain, src_ip), "warning");
+                             }
+                        }
                         log_query(src_ip, domain, "A".to_string(), status);
                         let _ = socket.send_to(&response, src);
                     }
@@ -242,7 +298,7 @@ fn forward_dns_query(query: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
-fn handle_dns_query(query: &[u8]) -> Option<(Vec<u8>, String, String)> {
+fn handle_dns_query(query: &[u8], src_ip: &str) -> Option<(Vec<u8>, String, String)> {
     if query.len() < 12 { return None; }
 
     // Parse Header
@@ -271,6 +327,30 @@ fn handle_dns_query(query: &[u8]) -> Option<(Vec<u8>, String, String)> {
         pos += len;
     }
     let domain_name = domain_parts.join(".");
+
+    // Check Auth Status (Captive Portal)
+    let is_auth = {
+        let cache = AUTHENTICATED_IPS.read().unwrap();
+        cache.contains(src_ip)
+    };
+
+    // The Hijack Logic
+    if !is_auth {
+        // Retrieve valid gateway/interface IP (The one user can reach to login)
+        let gateway_ip = UPSTREAM_INTERFACE.read().unwrap().clone();
+        
+        // If the user asks for "portal.crabflow.local", give them the real IP (which is gateway_ip anyway usually).
+        // If they ask for ANYTHING else (google.com), give them the Gateway IP too.
+        
+        // Construct spoofed response
+        let spoofed_response = build_dns_response(id, query, &gateway_ip);
+
+        // We can optionally check if domain_name == "portal.crabflow.local" to mark as 'Allowed' instead of 'Redirected'
+        // but broadly we serve the same content.
+        let status = if domain_name.contains("crabflow") { "Portal".to_string() } else { "Redirected".to_string() };
+
+        return Some((spoofed_response, domain_name, status));
+    }
 
     // Skip QTYPE and QCLASS
     pos += 4;
@@ -358,7 +438,7 @@ fn handle_dns_query(query: &[u8]) -> Option<(Vec<u8>, String, String)> {
 }
 
 fn get_blacklist_file() -> String {
-    var("CRABFLOW_DNS_BLACKLIST").unwrap_or_else(|_| "blacklist.json".to_string())
+    paths::get_config_path("blacklist.json").to_string_lossy().to_string()
 }
 
 pub fn list_blacklist() -> Vec<String> {

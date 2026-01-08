@@ -43,12 +43,12 @@ pub fn restart_system() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn restart_networking() -> Result<(), String> {
+pub fn restart_networking(app: AppHandle) -> Result<(), String> {
     logging::log_info("Restarting networking services...");
     shutdown_networking();
     // Give it a moment to clear up ports if necessary, though shutdown should be synchronous enough
     std::thread::sleep(std::time::Duration::from_secs(1));
-    initialize_networking();
+    initialize_networking(Some(app));
     Ok(())
 }
 
