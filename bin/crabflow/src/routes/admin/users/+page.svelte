@@ -203,7 +203,12 @@
   <div class="container-fluid">
     <div class="row mb-2">
       <div class="col-sm-6">
-        <h1>User Management</h1>
+        <h1>
+          User Management
+          <a href="/admin/about/guides/users-groups" class="btn btn-sm btn-outline-info ml-2" title="View Users & Groups Guide">
+            <i class="fas fa-question-circle"></i>
+          </a>
+        </h1>
       </div>
       <div class="col-sm-6">
         <button class="btn btn-primary float-sm-right ml-2" on:click={startAdd}>

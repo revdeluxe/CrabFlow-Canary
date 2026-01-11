@@ -1,7 +1,7 @@
 // src-tauri/src/network/firewall.rs
 use serde::{Serialize, Deserialize};
 use crate::sysmodules::{fetch, post, logging, paths};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use lazy_static::lazy_static;
 use uuid::Uuid;
 

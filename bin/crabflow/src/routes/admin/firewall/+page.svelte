@@ -83,7 +83,12 @@
   <div class="container-fluid">
     <div class="row mb-2">
       <div class="col-sm-6">
-        <h1>Firewall Management</h1>
+        <h1>
+          Firewall Management
+          <a href="/admin/about/guides/firewall" class="btn btn-sm btn-outline-info ml-2" title="View Firewall Setup Guide">
+            <i class="fas fa-question-circle"></i>
+          </a>
+        </h1>
       </div>
     </div>
   </div>

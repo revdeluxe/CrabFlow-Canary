@@ -1101,13 +1101,14 @@ name = "crabflow"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "chrono",
  "directories",
  "dirs 5.0.1",
- "dotenv",
  "get_if_addrs",
  "is_elevated",
  "lazy_static",
+ "libc",
  "serde",
  "serde_json",
  "surrealdb",
@@ -1496,12 +1497,6 @@ dependencies = [
  "trice",
  "urlencoding",
 ]
-
-[[package]]
-name = "dotenv"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
 name = "double-ended-peekable"

@@ -1,11 +1,11 @@
 use crate::sysmodules::config::load_logging_config;
+use crate::sysmodules::paths;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::{OnceLock, Mutex};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::thread;
-use dotenv::var;
 use chrono::Local;
 use serde::Serialize;
 
@@ -37,9 +37,12 @@ fn level_str_to_u8(level: &str) -> u8 {
 }
 
 pub fn init_logging() {
-    dotenv::dotenv().ok();
+    // Ensure logs directory exists
+    let logs_dir = paths::get_logs_dir();
+    if let Err(e) = std::fs::create_dir_all(&logs_dir) {
+        eprintln!("Failed to create logs directory: {}", e);
+    }
 
-    let log_dir = var("LOG_DIR").unwrap_or_else(|_| "logs".to_string());
     let (tx, rx) = channel::<LogMessage>();
     
     // Initialize Sender
@@ -54,7 +57,7 @@ pub fn init_logging() {
             println!("Log file: {}", cfg.file);
             LOG_LEVEL.store(level_str_to_u8(&cfg.level), Ordering::Relaxed);
             
-            let file_path = format!("{}/{}", log_dir, cfg.file);
+            let file_path = paths::get_log_path(&cfg.file);
             
             // Spawn background logger thread
             thread::spawn(move || {
@@ -184,7 +187,7 @@ pub fn log_event(category: String, action: String, details: String) {
 }
 
 #[tauri::command]
-pub fn get_logs_legacy(limit: usize) -> Result<Vec<LogEntry>, String> {
+pub fn get_logs_legacy(_limit: usize) -> Result<Vec<LogEntry>, String> {
     // Deprecated: Uses memory buffer now
     Ok(vec![])
 }

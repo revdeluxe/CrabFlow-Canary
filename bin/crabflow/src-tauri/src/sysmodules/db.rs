@@ -1,14 +1,12 @@
 use surrealdb::engine::local::SurrealKv;
 use surrealdb::Surreal;
-use surrealdb::opt::Config;
 use std::sync::OnceLock;
-use std::path::PathBuf;
+use crate::sysmodules::paths;
 
 pub static DB: OnceLock<Surreal<surrealdb::engine::local::Db>> = OnceLock::new();
 
 pub async fn init() -> Result<(), String> {
-    let root = crate::sysmodules::config::get_project_root();
-    let db_path = root.join("db/crabflow.kv");
+    let db_path = paths::get_db_path("crabflow.kv");
     
     // Ensure directory exists
     if let Some(parent) = db_path.parent() {
@@ -33,8 +31,7 @@ pub fn get() -> &'static Surreal<surrealdb::engine::local::Db> {
 use crate::user_management::user::{UserDatabase, User, Group, UserSettings};
 
 pub async fn migrate_legacy() -> Result<(), String> {
-    let root = crate::sysmodules::config::get_project_root();
-    let user_db_path = root.join("db/users.json");
+    let user_db_path = paths::get_db_path("users.json");
     
     if user_db_path.exists() {
         let content = std::fs::read_to_string(&user_db_path).map_err(|e| e.to_string())?;
@@ -58,7 +55,7 @@ pub async fn migrate_legacy() -> Result<(), String> {
         let _: Option<UserSettings> = db.update(("settings", "main")).content(old_db.settings).await.ok().flatten();
         
         // Rename legacy file
-        let backup_path = root.join("db/users.json.migrated");
+        let backup_path = paths::get_db_path("users.json.migrated");
         if let Err(e) = std::fs::rename(&user_db_path, &backup_path) {
             return Err(format!("Failed to rename legacy DB: {}", e));
         }

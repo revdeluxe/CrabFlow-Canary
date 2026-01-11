@@ -1,18 +1,15 @@
 // src-tauri/src/network/cportal.rs
 
 use crate::user_management::user::{UserStore, LoginRecord};
-use crate::sysmodules::{fetch, post, notify};
+use crate::sysmodules::{fetch, post, notify, paths};
 use crate::sysmodules::config::SetupConfig;
 use crate::network::dns;
 use tauri::{State, AppHandle};
 use chrono::Utc;
 use std::fs;
-use dotenv::var;
 
 fn get_portal_path() -> std::path::PathBuf {
-    let config_dir = var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
-    let root = crate::sysmodules::config::get_project_root();
-    root.join(config_dir).join("portal.html")
+    paths::get_config_path("portal.html")
 }
 
 #[tauri::command]

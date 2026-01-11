@@ -144,6 +144,13 @@
           </li>
 
           <li class="nav-item">
+            <a href="/admin/acl" class="nav-link" class:active={$page.url.pathname.includes('/admin/acl')}>
+              <i class="nav-icon fas fa-lock"></i>
+              <p>ACL & Permissions</p>
+            </a>
+          </li>
+
+          <li class="nav-item">
             <a href="/admin/monitor" class="nav-link" class:active={$page.url.pathname.includes('/admin/monitor')}>
               <i class="nav-icon fas fa-chart-line"></i>
               <p>Monitor</p>

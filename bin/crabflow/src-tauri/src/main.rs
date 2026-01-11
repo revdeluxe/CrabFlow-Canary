@@ -12,8 +12,7 @@ mod init;
 mod render;
 
 use tauri::{Window, Manager};
-// use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use user_management::user::UserStore;
 use user_management::auth::SessionStore;
 use sysinfo::System;
@@ -77,8 +76,6 @@ fn main() {
         }
         std::process::exit(1);
     }
-
-    dotenv::dotenv().ok();
 
     // Initialize Tracing for SurrealDB
     tracing_subscriber::fmt()

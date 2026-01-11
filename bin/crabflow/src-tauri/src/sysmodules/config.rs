@@ -1,14 +1,10 @@
-use dotenv::dotenv;
-use std::{env, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json;
+use crate::sysmodules::paths;
 
 pub fn get_project_root() -> PathBuf {
-    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    if cwd.ends_with("src-tauri") {
-        return cwd.parent().unwrap().to_path_buf();
-    }
-    cwd
+    paths::get_install_dir()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -124,17 +120,9 @@ fn default_monitor_interval() -> u64 {
     5000
 }
 
-fn resolve_path(env_key: &str, default: &str) -> PathBuf {
-    dotenv().ok();
-    let path = env::var(env_key).unwrap_or_else(|_| default.to_string());
-    PathBuf::from(path)
-}
-
 #[tauri::command]
 pub fn load_logging_config() -> Result<LoggingConfig, String> {
-    let config_dir = env::var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
-    let default_path = format!("{}/logging.conf.json", config_dir);
-    let path = resolve_path("CRABFLOW_LOG_CONFIG", &default_path);
+    let path = paths::get_config_path("logging.conf.json");
     
     if !path.exists() {
         return Ok(LoggingConfig {
@@ -150,9 +138,7 @@ pub fn load_logging_config() -> Result<LoggingConfig, String> {
 
 #[tauri::command]
 pub fn save_logging_config(config: LoggingConfig) -> Result<(), String> {
-    let config_dir = env::var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
-    let default_path = format!("{}/logging.conf.json", config_dir);
-    let path = resolve_path("CRABFLOW_LOG_CONFIG", &default_path);
+    let path = paths::get_config_path("logging.conf.json");
     
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -164,9 +150,7 @@ pub fn save_logging_config(config: LoggingConfig) -> Result<(), String> {
 
 #[tauri::command]
 pub fn load_setup_config() -> Result<SetupConfig, String> {
-    let config_dir = env::var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
-    let default_path = format!("{}/setup.conf", config_dir);
-    let path = resolve_path("CRABFLOW_SETUP_CONFIG", &default_path);
+    let path = paths::get_config_path("crabflow_config.json");
     
     if !path.exists() {
         return Ok(SetupConfig {
@@ -195,9 +179,7 @@ pub fn load_setup_config() -> Result<SetupConfig, String> {
 
 #[tauri::command]
 pub fn save_setup_config(config: SetupConfig) -> Result<(), String> {
-    let config_dir = env::var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
-    let default_path = format!("{}/setup.conf", config_dir);
-    let path = resolve_path("CRABFLOW_SETUP_CONFIG", &default_path);
+    let path = paths::get_config_path("crabflow_config.json");
     
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -209,7 +191,7 @@ pub fn save_setup_config(config: SetupConfig) -> Result<(), String> {
 
 #[tauri::command]
 pub fn reset_setup_config() -> Result<(), String> {
-    let path = resolve_path("CRABFLOW_SETUP_CONFIG", "config/setup.conf");
+    let path = paths::get_config_path("crabflow_config.json");
     let default = SetupConfig {
         hostname: "".into(),
         admin_email: "".into(),

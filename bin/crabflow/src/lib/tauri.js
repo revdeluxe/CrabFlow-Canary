@@ -91,7 +91,7 @@ export const api = {
   // Captive Portal & History
   tagUser: async (username, ip, deviceName) => await invoke('tag_user', { username, ip, deviceName }),
   getUserHistory: async (username) => await invoke('get_user_history', { username }),
-  uploadId: async (username, filePath) => await invoke('upload_id', { username, filePath }),
+  uploadId: async (username, fileData) => await invoke('upload_id', { username, fileData }),
   setCaptivePortal: async (enabled) => await invoke('set_captive_portal', { enabled }),
   setCustomPortal: async (enabled) => await invoke('set_custom_portal', { enabled }),
   getPortalTemplate: async () => await invoke('get_portal_template'),

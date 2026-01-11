@@ -2,32 +2,23 @@
 
 use std::path::PathBuf;
 use std::fs;
-// use serde::{Serialize, Deserialize};
-use dotenv::var;
-use crate::sysmodules::config::{get_project_root, SetupConfig};
+use crate::sysmodules::config::SetupConfig;
+use crate::sysmodules::paths;
 
 fn config_path() -> PathBuf {
-    let root = get_project_root();
-    let config_dir_name = var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
-    let config_file = var("CRABFLOW_CONFIG").unwrap_or_else(|_| "crabflow_config.json".to_string());
-    root.join(config_dir_name).join(config_file)
+    paths::get_config_path("crabflow_config.json")
 }
 
-/// Write a file safely to the config directory
+/// Write a file safely to the appropriate directory
 pub fn write_file(filename: &str, data: &str) -> Result<(), String> {
-    // Decide where to write based on filename or extension?
-    // leases.json -> db
-    // dns.json -> config
+    // Decide where to write based on filename
+    // leases.json, system_stats.json -> db
     // others -> config
     
-    let root = get_project_root();
-    let config_dir_name = var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
-    let db_dir_name = var("CRABFLOW_DB_DIR").unwrap_or_else(|_| "db".to_string());
-
     let path = if filename == "leases.json" || filename == "system_stats.json" {
-        root.join(db_dir_name).join(filename)
+        paths::get_db_path(filename)
     } else {
-        root.join(config_dir_name).join(filename)
+        paths::get_config_path(filename)
     };
 
     // Ensure directory exists
@@ -39,15 +30,12 @@ pub fn write_file(filename: &str, data: &str) -> Result<(), String> {
 }
 
 /// Append data to a file safely
+#[allow(dead_code)]
 pub fn append_file(filename: &str, data: &str) -> Result<(), String> {
-    let root = get_project_root();
-    let config_dir_name = var("CRABFLOW_CONFIG_DIR").unwrap_or_else(|_| "config".to_string());
-    let db_dir_name = var("CRABFLOW_DB_DIR").unwrap_or_else(|_| "db".to_string());
-
     let path = if filename == "leases.json" || filename == "system_stats.json" {
-        root.join(db_dir_name).join(filename)
+        paths::get_db_path(filename)
     } else {
-        root.join(config_dir_name).join(filename)
+        paths::get_config_path(filename)
     };
 
     // Ensure directory exists

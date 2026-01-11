@@ -2,9 +2,8 @@
 
 use serde::{Serialize, Deserialize};
 use crate::sysmodules::{fetch, post, logging, config, notify, paths};
-use crate::network::dhcp;
+use crate::network::{dhcp, acl};
 use tauri::AppHandle;
-use dotenv::var;
 use std::net::UdpSocket;
 use std::thread;
 use std::time::Duration;
@@ -334,10 +333,27 @@ fn handle_dns_query(query: &[u8], src_ip: &str) -> Option<(Vec<u8>, String, Stri
         cache.contains(src_ip)
     };
 
-    // The Hijack Logic
-    if !is_auth {
+    // Check if captive portal is enabled via ACL config
+    let captive_portal_enabled = acl::is_captive_portal_enabled();
+    
+    // Check if this is a captive portal detection domain (triggers "Sign in to network" prompt)
+    let is_detection_domain = acl::is_detection_domain(&domain_name);
+    
+    // Check if domain should be allowed before authentication
+    let is_allowed_before_auth = acl::is_allowed_before_auth(&domain_name);
+
+    // The Hijack Logic - Only if captive portal is enabled
+    if captive_portal_enabled && !is_auth && !is_allowed_before_auth {
         // Retrieve valid gateway/interface IP (The one user can reach to login)
         let gateway_ip = UPSTREAM_INTERFACE.read().unwrap().clone();
+        
+        // For detection domains, we need special handling to trigger the captive portal prompt
+        if is_detection_domain {
+            // Return the gateway IP - the HTTP server will handle the captive portal response
+            let spoofed_response = build_dns_response(id, query, &gateway_ip);
+            logging::log_debug(&format!("Captive Portal Detection: {} -> {} (from {})", domain_name, gateway_ip, src_ip));
+            return Some((spoofed_response, domain_name, "CaptiveDetect".to_string()));
+        }
         
         // If the user asks for "portal.crabflow.local", give them the real IP (which is gateway_ip anyway usually).
         // If they ask for ANYTHING else (google.com), give them the Gateway IP too.

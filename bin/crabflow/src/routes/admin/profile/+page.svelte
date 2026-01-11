@@ -3,17 +3,20 @@
   import { api } from '$lib/tauri'
   import { session } from '$lib/stores/session'
   import { get } from 'svelte/store'
+  import { convertFileSrc } from '@tauri-apps/api/core'
 
   let user = {
     username: 'Admin',
     email: 'admin@example.com',
     nickname: 'Administrator',
-    role: 'Administrator'
+    role: 'Administrator',
+    id_document_path: null
   }
   let newPassword = ''
   let history = []
   let loading = true
   let fileInput;
+  let profileImageUrl = null;
 
   onMount(async () => {
     try {
@@ -38,6 +41,14 @@
         // Ensure defaults if missing in DB
         if (!user.email && config) user.email = config.admin_email
         if (!user.nickname) user.nickname = 'Administrator'
+        // Load profile image if available
+        if (user.id_document_path) {
+          try {
+            profileImageUrl = convertFileSrc(user.id_document_path)
+          } catch (e) {
+            console.warn('Could not load profile image:', e)
+          }
+        }
       }
 
       try {
@@ -81,7 +92,13 @@
         const base64 = e.target.result;
         try {
             await api.uploadId(user.username, base64);
-            alert("ID uploaded successfully!");
+            // Refresh user data to get new image path
+            const users = await api.listUsers();
+            const dbUser = users.find(u => u.username === user.username);
+            if (dbUser && dbUser.id_document_path) {
+              profileImageUrl = convertFileSrc(dbUser.id_document_path);
+            }
+            alert("Profile picture uploaded successfully!");
         } catch (err) {
             alert("Upload failed: " + err);
         }
@@ -151,9 +168,13 @@
           <div class="card-body box-profile">
             <div class="text-center">
               <div class="profile-img-container" on:click={triggerFileUpload}>
-                <div class="img-circle elevation-2 d-flex justify-content-center align-items-center bg-light" style="width: 100%; height: 100%; font-size: 3rem;">
-                  <i class="fas fa-user"></i>
-                </div>
+                {#if profileImageUrl}
+                  <img src={profileImageUrl} alt="Profile" class="img-circle elevation-2" style="width: 100%; height: 100%; object-fit: cover;">
+                {:else}
+                  <div class="img-circle elevation-2 d-flex justify-content-center align-items-center bg-light" style="width: 100%; height: 100%; font-size: 3rem;">
+                    <i class="fas fa-user"></i>
+                  </div>
+                {/if}
                 <div class="profile-img-overlay">
                   <i class="fas fa-camera"></i>
                 </div>

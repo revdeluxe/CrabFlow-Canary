@@ -21,13 +21,18 @@
     success = null
 
     try {
-      const message = await api.registerUser(username, password)
-      success = message
-      setTimeout(() => {
-        goto("/")
-      }, 3000)
+      const result = await api.registerUser(username, password)
+      // API returns {message: "..."} or {error: "..."}
+      if (result.error) {
+        error = result.error
+      } else {
+        success = result.message || "Registration successful. Please wait for admin approval."
+        setTimeout(() => {
+          goto("/")
+        }, 3000)
+      }
     } catch (e) {
-      error = "Registration failed: " + e
+      error = "Registration failed: " + (e.message || e)
     } finally {
       loading = false
     }

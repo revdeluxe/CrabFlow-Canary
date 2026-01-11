@@ -176,7 +176,12 @@
   <div class="container-fluid">
     <div class="row mb-2">
       <div class="col-sm-6">
-        <h1>Settings</h1>
+        <h1>
+          Settings
+          <a href="/admin/about/guides/network-setup" class="btn btn-sm btn-outline-info ml-2" title="View Network Setup Guide">
+            <i class="fas fa-question-circle"></i>
+          </a>
+        </h1>
       </div>
     </div>
   </div>

@@ -1,9 +1,8 @@
 // src-tauri/src/setup/wizard.rs
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
-use dotenv::var;
-use crate::sysmodules::config::{get_project_root, DhcpConfig, SetupConfig};
+use crate::sysmodules::config::SetupConfig;
 use crate::sysmodules::paths;
 
 #[derive(Serialize)]

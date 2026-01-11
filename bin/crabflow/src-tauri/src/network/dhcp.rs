@@ -3,7 +3,6 @@
 use serde::{Serialize, Deserialize};
 use crate::sysmodules::{fetch, post, logging, config, notify, paths};
 use tauri::AppHandle;
-use dotenv::var;
 use std::net::UdpSocket;
 use std::thread;
 // use std::sync::{Arc, Mutex};

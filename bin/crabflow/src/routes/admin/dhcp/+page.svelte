@@ -1,21 +1,63 @@
 <script>
   import { invoke } from '@tauri-apps/api/core'
-  import { onMount } from 'svelte'
+  import { onMount, onDestroy } from 'svelte'
 
   let leases = []
   let loading = true
   let error = null
   let showModal = false
+  let serverStatus = {
+    running: false,
+    mode: 'server', // 'server' or 'client'
+    pool_start: '',
+    pool_end: '',
+    gateway: '',
+    dns: ''
+  }
 
   let newLease = {
     ip: "",
     mac: "",
     hostname: ""
   }
+  
+  let refreshInterval
+  
+  // Format expiry timestamp to readable date/time
+  function formatExpiry(timestamp) {
+    if (!timestamp || timestamp === 'never') return 'Never'
+    try {
+      // Handle both Unix timestamp and ISO string
+      const ts = typeof timestamp === 'number' ? timestamp : parseInt(timestamp)
+      if (isNaN(ts)) return timestamp
+      const date = new Date(ts * 1000)
+      return date.toLocaleString()
+    } catch (e) {
+      return timestamp
+    }
+  }
 
   async function refresh() {
     try {
       leases = await invoke("list_leases")
+      
+      // Get live stats for DHCP server status
+      const liveStats = await invoke('get_live_stats')
+      serverStatus.running = liveStats.services_status.dhcp
+      
+      // Try to get DHCP config for pool info
+      try {
+        const config = await invoke("load_setup")
+        if (config && config.dhcp) {
+          serverStatus.pool_start = config.dhcp.range_start || ''
+          serverStatus.pool_end = config.dhcp.range_end || ''
+          serverStatus.gateway = config.dhcp.gateway || ''
+          serverStatus.dns = config.dhcp.dns || ''
+          serverStatus.mode = config.dhcp.enabled ? 'server' : 'client'
+        }
+      } catch (e) {
+        console.error("Failed to load DHCP config:", e)
+      }
     } catch (e) {
       console.error("Failed to load leases:", e)
       error = e
@@ -47,6 +89,12 @@
   onMount(async () => {
     await refresh()
     loading = false
+    // Auto-refresh every 5 seconds
+    refreshInterval = setInterval(refresh, 5000)
+  })
+  
+  onDestroy(() => {
+    if (refreshInterval) clearInterval(refreshInterval)
   })
 </script>
 
@@ -54,7 +102,12 @@
   <div class="container-fluid">
     <div class="row mb-2">
       <div class="col-sm-6">
-        <h1>DHCP Management</h1>
+        <h1>
+          DHCP Management
+          <a href="/admin/about/guides/dhcp" class="btn btn-sm btn-outline-info ml-2" title="View DHCP Setup Guide">
+            <i class="fas fa-question-circle"></i>
+          </a>
+        </h1>
       </div>
       <div class="col-sm-6">
         <div class="float-sm-right">
@@ -69,6 +122,84 @@
 
 <section class="content">
   <div class="container-fluid">
+    <!-- DHCP Server Status Card -->
+    <div class="row mb-3">
+      <div class="col-12">
+        <div class="card card-outline {serverStatus.running ? 'card-success' : 'card-danger'}">
+          <div class="card-header">
+            <h3 class="card-title">
+              <i class="fas fa-server mr-2"></i>
+              DHCP Server Status
+            </h3>
+            <div class="card-tools">
+              <span class="badge {serverStatus.running ? 'badge-success' : 'badge-danger'} badge-lg">
+                <i class="fas fa-circle mr-1"></i>
+                {serverStatus.running ? 'Running' : 'Stopped'}
+              </span>
+            </div>
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-striped mb-0">
+              <tbody>
+                <tr>
+                  <td style="width: 50px;">
+                    <span class="badge {serverStatus.mode === 'server' ? 'badge-primary' : 'badge-secondary'} p-2">
+                      <i class="fas {serverStatus.mode === 'server' ? 'fa-server' : 'fa-laptop'}"></i>
+                    </span>
+                  </td>
+                  <td>
+                    <strong>Mode</strong><br>
+                    <small class="text-muted">{serverStatus.mode === 'server' ? 'Assigning IPs' : 'Receiving IP'}</small>
+                  </td>
+                  <td class="text-right">
+                    <span class="badge {serverStatus.mode === 'server' ? 'badge-primary' : 'badge-secondary'}">
+                      {serverStatus.mode === 'server' ? 'DHCP Server' : 'Client Only'}
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="badge badge-info p-2"><i class="fas fa-network-wired"></i></span>
+                  </td>
+                  <td>
+                    <strong>IP Pool</strong><br>
+                    <small class="text-muted">{serverStatus.pool_end ? 'to ' + serverStatus.pool_end : 'Range end'}</small>
+                  </td>
+                  <td class="text-right">
+                    <code>{serverStatus.pool_start || 'Not configured'}</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="badge badge-warning p-2"><i class="fas fa-door-open"></i></span>
+                  </td>
+                  <td>
+                    <strong>Gateway</strong><br>
+                    <small class="text-muted">Default route</small>
+                  </td>
+                  <td class="text-right">
+                    <code>{serverStatus.gateway || 'Not set'}</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="badge badge-success p-2"><i class="fas fa-laptop"></i></span>
+                  </td>
+                  <td>
+                    <strong>Active Leases</strong><br>
+                    <small class="text-muted">Connected clients</small>
+                  </td>
+                  <td class="text-right">
+                    <span class="badge badge-success">{leases.length}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    
     {#if loading}
       <div class="d-flex justify-content-center">
         <div class="spinner-border text-primary" role="status">
@@ -101,36 +232,55 @@
                     <th>IP Address</th>
                     <th>MAC Address</th>
                     <th>Hostname</th>
+                    <th>Type</th>
                     <th>Expires</th>
-                    <th style="width: 40px">Actions</th>
+                    <th style="width: 120px">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {#each leases as l}
                     <tr>
-                      <td>{l.ip}</td>
-                      <td>{l.mac}</td>
+                      <td>
+                        <i class="fas fa-circle text-success mr-1" style="font-size: 8px;"></i>
+                        {l.ip}
+                      </td>
+                      <td><code>{l.mac}</code></td>
                       <td>{l.hostname || '-'}</td>
                       <td>
                         {#if l.static_lease}
                           <span class="badge badge-info">Static</span>
                         {:else}
-                          {l.expires_at}
+                          <span class="badge badge-secondary">Dynamic</span>
                         {/if}
                       </td>
                       <td>
-                        <button class="btn btn-danger btn-sm" on:click={() => removeLease(l.ip)}>
+                        {#if l.static_lease}
+                          <span class="text-muted">Never</span>
+                        {:else}
+                          {formatExpiry(l.expires_at)}
+                        {/if}
+                      </td>
+                      <td>
+                        <a href="/admin/dns" class="btn btn-info btn-xs mr-1" title="Create DNS Record">
+                          <i class="fas fa-globe"></i>
+                        </a>
+                        <button class="btn btn-danger btn-xs" on:click={() => removeLease(l.ip)} title="Remove">
                           <i class="fas fa-trash"></i>
                         </button>
                       </td>
                     </tr>
                   {:else}
                     <tr>
-                      <td colspan="5" class="text-center">No leases found</td>
+                      <td colspan="6" class="text-center text-muted">
+                        <i class="fas fa-info-circle mr-1"></i> No leases found
+                      </td>
                     </tr>
                   {/each}
                 </tbody>
               </table>
+            </div>
+            <div class="card-footer text-muted">
+              <small><i class="fas fa-sync-alt mr-1"></i> Auto-refreshes every 5 seconds</small>
             </div>
           </div>
         </div>

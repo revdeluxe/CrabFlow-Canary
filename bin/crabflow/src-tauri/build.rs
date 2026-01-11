@@ -1,7 +1,17 @@
 fn main() {
-    let windows = tauri_build::WindowsAttributes::new()
-        .app_manifest(include_str!("app.manifest"));
+    // Windows-specific: include manifest for UAC elevation
+    #[cfg(target_os = "windows")]
+    {
+        let windows = tauri_build::WindowsAttributes::new()
+            .app_manifest(include_str!("app.manifest"));
 
-    tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows))
-        .expect("failed to run build script");
+        tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows))
+            .expect("failed to run build script");
+    }
+
+    // Non-Windows platforms
+    #[cfg(not(target_os = "windows"))]
+    {
+        tauri_build::build();
+    }
 }

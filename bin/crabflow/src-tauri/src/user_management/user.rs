@@ -1,5 +1,4 @@
 use serde::{Serialize, Deserialize};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::State;
 use crate::user_management::permission::Role;
@@ -241,12 +240,50 @@ pub fn list_permissions() -> Vec<String> {
 }
 
 #[tauri::command]
-pub async fn upload_id(store: State<'_, UserStore>, username: String, file_path: String) -> Result<(), String> {
+pub async fn upload_id(store: State<'_, UserStore>, username: String, file_data: String) -> Result<(), String> {
+    use base64::{Engine as _, engine::general_purpose};
+    use std::fs;
+    
+    // file_data can be either a base64 data URL or a file path
+    let file_path = if file_data.starts_with("data:") {
+        // It's a base64 data URL, decode and save to file
+        let parts: Vec<&str> = file_data.splitn(2, ',').collect();
+        if parts.len() != 2 {
+            return Err("Invalid data URL format".to_string());
+        }
+        
+        let base64_data = parts[1];
+        let decoded = general_purpose::STANDARD.decode(base64_data)
+            .map_err(|e| format!("Failed to decode base64: {}", e))?;
+        
+        // Create user_ids directory if it doesn't exist
+        let ids_dir = crate::sysmodules::paths::get_config_dir().join("user_ids");
+        fs::create_dir_all(&ids_dir).map_err(|e| format!("Failed to create directory: {}", e))?;
+        
+        // Determine file extension from mime type
+        let ext = if parts[0].contains("png") { "png" } 
+                  else if parts[0].contains("gif") { "gif" }
+                  else { "jpg" };
+        
+        let file_name = format!("{}_{}.{}", username, chrono::Utc::now().timestamp(), ext);
+        let save_path = ids_dir.join(&file_name);
+        
+        fs::write(&save_path, decoded)
+            .map_err(|e| format!("Failed to save file: {}", e))?;
+        
+        save_path.to_string_lossy().to_string()
+    } else {
+        // It's already a file path
+        file_data
+    };
+    
     {
         let mut db = store.db.lock().map_err(|e| e.to_string())?;
         
         if let Some(user) = db.users.iter_mut().find(|u| u.username == username) {
-            if user.login_history.is_empty() {
+            // Allow admin users to upload ID even without login history
+            // For regular users, check login history
+            if user.role != crate::user_management::permission::Role::Admin && user.login_history.is_empty() {
                  return Err("User must be tagged (logged in via portal) before uploading ID.".to_string());
             }
             user.id_document_path = Some(file_path);

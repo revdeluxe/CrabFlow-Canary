@@ -1,9 +1,10 @@
 use crate::sysmodules::{logging, post, fetch, config, paths};
 use crate::network::{dhcp, dns};
 use tauri::AppHandle;
-use dotenv::var;
 use std::thread;
 use std::time::Duration;
+
+#[cfg(target_os = "windows")]
 use std::process::Command;
 
 #[cfg(target_os = "windows")]
@@ -39,14 +40,61 @@ fn prepare_windows_environment() {
     logging::log_info("Windows environment preparation complete.");
 }
 
+#[cfg(target_os = "linux")]
+fn prepare_linux_environment() {
+    use std::process::Command;
+    
+    logging::log_info("Preparing Linux environment...");
+
+    // Check for root privileges
+    let uid = unsafe { libc::getuid() };
+    if uid != 0 {
+        logging::log_error("CRITICAL: Application is NOT running as root. Network services may fail.");
+    } else {
+        logging::log_info("Root privileges confirmed.");
+    }
+
+    // Enable IP forwarding
+    logging::log_info("Enabling IP forwarding...");
+    let _ = Command::new("sysctl")
+        .args(["-w", "net.ipv4.ip_forward=1"])
+        .output();
+
+    logging::log_info("Linux environment preparation complete.");
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_macos_environment() {
+    use std::process::Command;
+    
+    logging::log_info("Preparing macOS environment...");
+
+    // Check for root privileges
+    let uid = unsafe { libc::getuid() };
+    if uid != 0 {
+        logging::log_error("CRITICAL: Application is NOT running as root. Network services may fail.");
+    } else {
+        logging::log_info("Root privileges confirmed.");
+    }
+
+    // Enable IP forwarding
+    logging::log_info("Enabling IP forwarding...");
+    let _ = Command::new("sysctl")
+        .args(["-w", "net.inet.ip.forwarding=1"])
+        .output();
+
+    logging::log_info("macOS environment preparation complete.");
+}
+
 pub fn initialize_networking(app_handle: Option<AppHandle>) {
     logging::log_info("Initializing networking components...");
     
-    // Ensure data directory exists
+    // Ensure data directories exist
     if let Err(e) = paths::init_data_dir() {
         logging::log_error(&format!("Failed to initialize data directory: {}", e));
     }
 
+    // Platform-specific environment preparation
     #[cfg(target_os = "windows")]
     {
         prepare_windows_environment();
@@ -54,8 +102,19 @@ pub fn initialize_networking(app_handle: Option<AppHandle>) {
         thread::sleep(Duration::from_secs(2));
     }
 
-    let leases_file = paths::get_config_path("leases.json").to_string_lossy().to_string();
-    let dns_file = paths::get_config_path("dns.json").to_string_lossy().to_string();
+    #[cfg(target_os = "linux")]
+    {
+        prepare_linux_environment();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        prepare_macos_environment();
+    }
+
+    // Use new paths module for file locations
+    let leases_file = paths::get_db_path("leases.json");
+    let dns_file = paths::get_config_path("dns.json");
 
     // Load main configuration to set upstream interface
     match config::load_setup_config() {
@@ -70,24 +129,25 @@ pub fn initialize_networking(app_handle: Option<AppHandle>) {
     }
 
     // Initialize DHCP
-    match fetch::read_file(&leases_file) {
+    let leases_str = leases_file.to_string_lossy().to_string();
+    match fetch::read_file(&leases_str) {
         Ok(_) => logging::log_info("DHCP configuration found."),
         Err(_) => {
             logging::log_info("DHCP configuration not found. Creating default.");
-            // leases.json should go to db, but write_file handles it based on name now
-            if let Err(e) = post::write_file(&leases_file, "[]") {
-                logging::log_error(&format!("Failed to create {}: {}", leases_file, e));
+            if let Err(e) = post::write_file(&leases_str, "[]") {
+                logging::log_error(&format!("Failed to create {}: {}", leases_str, e));
             }
         }
     }
 
     // Initialize DNS
-    match fetch::read_file(&dns_file) {
+    let dns_str = dns_file.to_string_lossy().to_string();
+    match fetch::read_file(&dns_str) {
         Ok(_) => logging::log_info("DNS configuration found."),
         Err(_) => {
             logging::log_info("DNS configuration not found. Creating default.");
-            if let Err(e) = post::write_file(&dns_file, "[]") {
-                logging::log_error(&format!("Failed to create {}: {}", dns_file, e));
+            if let Err(e) = post::write_file(&dns_str, "[]") {
+                logging::log_error(&format!("Failed to create {}: {}", dns_str, e));
             }
         }
     }

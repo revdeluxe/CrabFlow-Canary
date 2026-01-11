@@ -90,7 +90,7 @@ pub fn get_live_stats(session_store: State<SessionStore>) -> LiveServiceStats {
 }
 
 #[tauri::command]
-pub fn start_performance_logging(filename: String, state_sys: State<'static, Mutex<System>>, state_net: State<'static, Mutex<Networks>>) {
+pub fn start_performance_logging(filename: String, _state_sys: State<'static, Mutex<System>>, _state_net: State<'static, Mutex<Networks>>) {
     if LOGGING_ACTIVE.load(Ordering::Relaxed) {
         return;
     }
