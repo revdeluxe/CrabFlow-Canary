@@ -1,8 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte'
   import { api } from '$lib/tauri'
-
-  import { invoke } from '@tauri-apps/api/core'
+  import { session } from '$lib/stores/session'
 
   let leasesCount = 0
   let recordsCount = 0
@@ -37,6 +36,10 @@
   let recentDnsLogs = []
   let uptimeSeconds = 0
   let startTime = Date.now()
+  
+  // Accordion states (collapsed by default)
+  let showInterfaces = false
+  let showHotspot = false
 
   let interval
   let cpuCanvas
@@ -62,7 +65,7 @@
 
   async function refresh() {
     try {
-      liveStats = await invoke('get_live_stats');
+      liveStats = await api.invokeCommand('get_live_stats');
       leasesCount = liveStats.dhcp_clients;
       usersCount = liveStats.active_users || 0;
 
@@ -214,11 +217,11 @@
     <h1 class="m-0">Admin Dashboard</h1>
   </div>
   <div class="col-sm-6">
-    <div class="float-sm-right">
-      <span class="badge badge-secondary mr-2">
+    <div class="float-sm-end">
+      <span class="badge bg-secondary me-2">
         <i class="fas fa-clock"></i> Uptime: {formatUptime(uptimeSeconds)}
       </span>
-      <span class="badge {systemStatus.internet_connected ? 'badge-success' : 'badge-danger'}">
+      <span class="badge {systemStatus.internet_connected ? 'bg-success' : 'bg-danger'}">
         <i class="fas fa-globe"></i> {systemStatus.internet_connected ? 'Online' : 'Offline'}
       </span>
     </div>
@@ -274,7 +277,7 @@
   <div class="col-12">
     <div class="card card-outline card-primary">
       <div class="card-header">
-        <h3 class="card-title"><i class="fas fa-server mr-2"></i>Services Status</h3>
+        <h3 class="card-title"><i class="fas fa-server me-2"></i>Services Status</h3>
       </div>
       <div class="card-body p-0">
         <table class="table table-striped mb-0">
@@ -289,8 +292,8 @@
                 <strong>DHCP Server</strong>
                 <br><small class="text-muted">{leasesCount} active leases</small>
               </td>
-              <td class="text-right">
-                <span class="badge {liveStats.services_status.dhcp ? 'badge-success' : 'badge-danger'}">
+              <td class="text-end">
+                <span class="badge {liveStats.services_status.dhcp ? 'bg-success' : 'bg-danger'}">
                   {liveStats.services_status.dhcp ? 'Running' : 'Stopped'}
                 </span>
               </td>
@@ -305,8 +308,8 @@
                 <strong>DNS Server</strong>
                 <br><small class="text-muted">{dnsStats.total} queries handled</small>
               </td>
-              <td class="text-right">
-                <span class="badge {liveStats.services_status.dns ? 'badge-success' : 'badge-danger'}">
+              <td class="text-end">
+                <span class="badge {liveStats.services_status.dns ? 'bg-success' : 'bg-danger'}">
                   {liveStats.services_status.dns ? 'Running' : 'Stopped'}
                 </span>
               </td>
@@ -321,8 +324,8 @@
                 <strong>Internet</strong>
                 <br><small class="text-muted">{systemStatus.active_interface}</small>
               </td>
-              <td class="text-right">
-                <span class="badge {systemStatus.internet_connected ? 'badge-success' : 'badge-warning'}">
+              <td class="text-end">
+                <span class="badge {systemStatus.internet_connected ? 'bg-success' : 'bg-warning'}">
                   {systemStatus.internet_connected ? 'Connected' : 'Disconnected'}
                 </span>
               </td>
@@ -337,8 +340,8 @@
                 <strong>Portal Users</strong>
                 <br><small class="text-muted">Authenticated clients</small>
               </td>
-              <td class="text-right">
-                <span class="badge badge-info">{usersCount} active</span>
+              <td class="text-end">
+                <span class="badge bg-info">{usersCount} active</span>
               </td>
             </tr>
           </tbody>
@@ -352,7 +355,7 @@
   <div class="col-md-6">
     <div class="card card-danger card-outline">
       <div class="card-header">
-        <h3 class="card-title"><i class="fas fa-microchip mr-2"></i>CPU Usage</h3>
+        <h3 class="card-title"><i class="fas fa-microchip me-2"></i>CPU Usage</h3>
       </div>
       <div class="card-body">
         <canvas bind:this={cpuCanvas} style="min-height: 200px; height: 200px; max-height: 200px; max-width: 100%;"></canvas>
@@ -367,7 +370,7 @@
   <div class="col-md-6">
     <div class="card card-primary card-outline">
       <div class="card-header">
-        <h3 class="card-title"><i class="fas fa-memory mr-2"></i>Memory Usage</h3>
+        <h3 class="card-title"><i class="fas fa-memory me-2"></i>Memory Usage</h3>
       </div>
       <div class="card-body">
         <canvas bind:this={memCanvas} style="min-height: 200px; height: 200px; max-height: 200px; max-width: 100%;"></canvas>
@@ -386,7 +389,7 @@
   <div class="col-md-6">
     <div class="card card-outline card-info">
       <div class="card-header">
-        <h3 class="card-title"><i class="fas fa-history mr-2"></i>Recent DNS Activity</h3>
+        <h3 class="card-title"><i class="fas fa-history me-2"></i>Recent DNS Activity</h3>
         <div class="card-tools">
           <a href="/admin/monitor" class="btn btn-tool"><i class="fas fa-external-link-alt"></i></a>
         </div>
@@ -402,11 +405,11 @@
                   <td class="text-truncate" style="max-width: 200px;">{log.domain}</td>
                   <td>
                     {#if log.status === 'Blocked'}
-                      <span class="badge badge-danger badge-sm">Blocked</span>
+                      <span class="badge bg-danger">Blocked</span>
                     {:else if log.status === 'Portal'}
-                      <span class="badge badge-info badge-sm">Portal</span>
+                      <span class="badge bg-info">Portal</span>
                     {:else}
-                      <span class="badge badge-success badge-sm">OK</span>
+                      <span class="badge bg-success">OK</span>
                     {/if}
                   </td>
                   <td class="text-muted"><small>{log.client_ip}</small></td>
@@ -423,7 +426,7 @@
   <div class="col-md-6">
     <div class="card card-outline card-secondary">
       <div class="card-header">
-        <h3 class="card-title"><i class="fas fa-bolt mr-2"></i>Quick Actions</h3>
+        <h3 class="card-title"><i class="fas fa-bolt me-2"></i>Quick Actions</h3>
       </div>
       <div class="card-body">
         <div class="row">
@@ -437,11 +440,13 @@
               <i class="fas fa-desktop"></i> Manage Leases
             </a>
           </div>
+          {#if $session?.user?.role === 'admin'}
           <div class="col-6 mb-2">
             <a href="/admin/acl" class="btn btn-outline-warning btn-block">
               <i class="fas fa-shield-alt"></i> ACL Rules
             </a>
           </div>
+          {/if}
           <div class="col-6 mb-2">
             <a href="/admin/users" class="btn btn-outline-success btn-block">
               <i class="fas fa-users"></i> Manage Users
@@ -466,16 +471,16 @@
 <!-- Network Interfaces (Collapsed) -->
 <div class="row">
     <div class="col-12">
-        <div class="card card-outline card-secondary collapsed-card">
+        <div class="card card-outline card-secondary">
             <div class="card-header">
-                <h3 class="card-title"><i class="fas fa-ethernet mr-2"></i>Network Interfaces</h3>
+                <h3 class="card-title"><i class="fas fa-ethernet me-2"></i>Network Interfaces</h3>
                 <div class="card-tools">
-                    <button type="button" class="btn btn-tool" data-card-widget="collapse">
-                        <i class="fas fa-plus"></i>
+                    <button type="button" class="btn btn-tool" on:click={() => showInterfaces = !showInterfaces}>
+                        <i class="fas {showInterfaces ? 'fa-minus' : 'fa-plus'}"></i>
                     </button>
                 </div>
             </div>
-            <div class="card-body p-0">
+            <div class="card-body p-0" class:d-none={!showInterfaces}>
                 <table class="table table-sm table-striped">
                     <thead>
                         <tr>
@@ -490,12 +495,12 @@
                                 <td>
                                   {iface.name}
                                   {#if iface.name === systemStatus.active_interface}
-                                    <span class="badge badge-success ml-1">Active</span>
+                                    <span class="badge bg-success ms-1">Active</span>
                                   {/if}
                                 </td>
                                 <td>
                                     {#each iface.ips as ip}
-                                        <span class="badge bg-light mr-1 text-dark border">{ip}</span>
+                                        <span class="badge bg-light me-1 text-dark border">{ip}</span>
                                     {/each}
                                 </td>
                                 <td><small class="text-muted">{iface.mac || '-'}</small></td>
@@ -511,16 +516,16 @@
 <!-- Hotspot Control (Collapsed by default) -->
 <div class="row">
   <div class="col-md-12">
-    <div class="card card-primary collapsed-card">
+    <div class="card card-primary">
       <div class="card-header">
-        <h3 class="card-title"><i class="fas fa-wifi mr-2"></i>Hotspot Control</h3>
+        <h3 class="card-title"><i class="fas fa-wifi me-2"></i>Hotspot Control</h3>
         <div class="card-tools">
-          <button type="button" class="btn btn-tool" data-card-widget="collapse">
-            <i class="fas fa-plus"></i>
+          <button type="button" class="btn btn-tool" on:click={() => showHotspot = !showHotspot}>
+            <i class="fas {showHotspot ? 'fa-minus' : 'fa-plus'}"></i>
           </button>
         </div>
       </div>
-      <div class="card-body">
+      <div class="card-body" class:d-none={!showHotspot}>
         <div class="row">
           <div class="col-md-6">
             <div class="form-group">
@@ -536,11 +541,11 @@
           </div>
         </div>
       </div>
-      <div class="card-footer">
+      <div class="card-footer" class:d-none={!showHotspot}>
         <button class="btn btn-primary" on:click={startHotspot} disabled={hotspotLoading}>
           <i class="fas fa-wifi"></i> Start Hotspot
         </button>
-        <button class="btn btn-danger float-right" on:click={stopHotspot} disabled={hotspotLoading}>
+        <button class="btn btn-danger float-end" on:click={stopHotspot} disabled={hotspotLoading}>
           <i class="fas fa-stop"></i> Stop
         </button>
       </div>

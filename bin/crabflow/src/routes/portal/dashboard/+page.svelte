@@ -1,10 +1,13 @@
 <script>
   import { onMount, onDestroy } from 'svelte'
-  import { invoke } from '@tauri-apps/api/core'
+  import { api } from '$lib/tauri'
   import { session } from '$lib/stores/session'
 
   let traffic = null
   let refreshInterval
+  
+  // Accordion state (expanded by default for connectivity test)
+  let showConnectivityTest = true
 
   function formatSpeed(bps) {
     if (bps >= 1000000000) {
@@ -30,7 +33,7 @@
 
   async function refresh() {
     try {
-      traffic = await invoke("get_traffic_summary")
+      traffic = await api.invokeCommand("get_traffic_summary")
     } catch (e) {
       console.error("Dashboard refresh failed:", e)
     }
@@ -211,14 +214,14 @@
   <div class="col-12">
     <div class="card card-outline card-info">
       <div class="card-header">
-        <h3 class="card-title"><i class="fas fa-globe mr-2"></i>Connectivity Test</h3>
+        <h3 class="card-title"><i class="fas fa-globe me-2"></i>Connectivity Test</h3>
         <div class="card-tools">
-          <button type="button" class="btn btn-tool" data-card-widget="collapse">
-            <i class="fas fa-minus"></i>
+          <button type="button" class="btn btn-tool" on:click={() => showConnectivityTest = !showConnectivityTest}>
+            <i class="fas {showConnectivityTest ? 'fa-minus' : 'fa-plus'}"></i>
           </button>
         </div>
       </div>
-      <div class="card-body p-0">
+      <div class="card-body p-0" class:d-none={!showConnectivityTest}>
         <div class="connectivity-frame">
           <iframe 
             src="https://www.google.com/webhp?igu=1" 
@@ -227,7 +230,7 @@
           ></iframe>
         </div>
       </div>
-      <div class="card-footer text-muted text-center">
+      <div class="card-footer text-muted text-center" class:d-none={!showConnectivityTest}>
         <small><i class="fas fa-info-circle mr-1"></i>If Google loads, your internet connection is working properly.</small>
       </div>
     </div>

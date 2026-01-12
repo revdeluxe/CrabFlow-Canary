@@ -1,8 +1,8 @@
 [
   {
-    "name": "local.crab",
+    "name": "portal.crabflow.local",
     "rtype": "A",
-    "value": "127.0.0.1:1420",
-    "ttl": 0
+    "value": "127.0.0.1",
+    "ttl": 300
   }
 ]

@@ -1,6 +1,6 @@
 <script>
-  import { invoke } from '@tauri-apps/api/core'
   import { onMount, onDestroy } from 'svelte'
+  import { api } from '$lib/tauri'
 
   let records = []
   let loading = true
@@ -36,7 +36,7 @@
 
   async function refresh() {
     try {
-      records = await invoke("list_records")
+      records = await api.invokeCommand("list_records")
     } catch (e) {
       console.error("Failed to load records:", e)
     } finally {
@@ -47,7 +47,7 @@
   async function loadLogs() {
     logsLoading = true
     try {
-      dnsLogs = await invoke("get_query_logs", { limit: 500 })
+      dnsLogs = await api.invokeCommand("get_query_logs", { limit: 500 })
       filterLogs()
     } catch (e) {
       console.error("Failed to load DNS logs:", e)
@@ -75,7 +75,7 @@
     try {
       // Convert TTL to integer if it's a string
       newRecord.ttl = parseInt(newRecord.ttl)
-      await invoke("add_record", { input: newRecord })
+      await api.invokeCommand("add_record", { input: newRecord })
       newRecord = { name: "", rtype: "A", value: "", ttl: 3600 }
       showModal = false
       refresh()
@@ -108,7 +108,7 @@
   async function updateRecord() {
     try {
       newRecord.ttl = parseInt(newRecord.ttl)
-      await invoke("update_record", { 
+      await api.invokeCommand("update_record", { 
         oldName: oldRecordName, 
         oldRtype: oldRecordType, 
         input: newRecord 
@@ -141,7 +141,7 @@
   async function removeRecord(name, rtype) {
     if (!confirm(`Are you sure you want to remove ${rtype} record for ${name}?`)) return
     try {
-      await invoke("remove_record", { name, rtype })
+      await api.invokeCommand("remove_record", { name, rtype })
       refresh()
     } catch (e) {
       alert("Failed to remove record: " + e)
@@ -163,7 +163,7 @@
   async function applyTemplate() {
     try {
       newRecord.ttl = parseInt(newRecord.ttl)
-      await invoke("add_record", { input: newRecord })
+      await api.invokeCommand("add_record", { input: newRecord })
       showTemplateModal = false
       selectedTemplate = null
       newRecord = { name: "", rtype: "A", value: "", ttl: 3600 }

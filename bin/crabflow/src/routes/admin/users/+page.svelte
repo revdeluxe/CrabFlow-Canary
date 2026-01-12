@@ -1,5 +1,4 @@
 <script>
-  import { invoke } from '@tauri-apps/api/core'
   import { onMount } from 'svelte'
   import { api } from '$lib/tauri'
 
@@ -18,6 +17,7 @@
     email: "",
     groups: [],
     password: "",
+    role: "guest", // Default role
     is_active: false,
     is_approved: false
   }
@@ -28,16 +28,17 @@
   let addForm = {
     username: "",
     password: "",
-    confirmPassword: ""
+    confirmPassword: "",
+    role: "guest"
   }
 
   async function loadData() {
     loading = true
     try {
       const [u, g, o] = await Promise.all([
-        invoke("list_users"),
+        api.invokeCommand("list_users"),
         api.listGroups(),
-        invoke("get_online_users")
+        api.invokeCommand("get_online_users")
       ])
       users = u
       availableGroups = g
@@ -69,7 +70,13 @@
     }
 
     try {
-      await invoke("register_user", { username: addForm.username, password: addForm.password })
+      await api.invokeCommand("register_user", { username: addForm.username, password: addForm.password })
+      
+      // If role is not guest, update it immediately
+      if (addForm.role && addForm.role !== 'guest') {
+        await api.invokeCommand("update_user_role", { username: addForm.username, role: addForm.role })
+      }
+
       alert("User created successfully")
       cancelAdd()
       loadData()
@@ -86,6 +93,7 @@
       email: user.email || "",
       groups: [...user.groups],
       password: "", // Don't show existing password
+      role: user.role || "guest",
       is_active: user.is_active,
       is_approved: user.is_approved
     }
@@ -95,7 +103,7 @@
   function cancelEdit() {
     editingUser = null
     showEdit = false
-    editForm = { username: "", nickname: "", email: "", groups: [], password: "", is_active: false, is_approved: false }
+    editForm = { username: "", nickname: "", email: "", groups: [], password: "", role: "guest", is_active: false, is_approved: false }
   }
 
   function toggleGroup(groupName) {
@@ -111,15 +119,20 @@
 
     try {
       // Update Profile (Nickname, Email)
-      await invoke("update_user_profile", {
+      await api.invokeCommand("update_user_profile", {
         username: editingUser.username,
         nickname: editForm.nickname || null,
         email: editForm.email || null
       })
 
+      // Update Role
+      if (editingUser.role !== editForm.role) {
+        await api.invokeCommand("update_user_role", { username: editingUser.username, role: editForm.role })
+      }
+
       // Update Status
       if (editingUser.is_active !== editForm.is_active || editingUser.is_approved !== editForm.is_approved) {
-        await invoke("update_user_status", { 
+        await api.invokeCommand("update_user_status", { 
           username: editingUser.username, 
           active: editForm.is_active, 
           approved: editForm.is_approved 
@@ -127,11 +140,11 @@
       }
 
       // Update Groups
-      await invoke("update_user_groups", { username: editingUser.username, groups: editForm.groups })
+      await api.invokeCommand("update_user_groups", { username: editingUser.username, groups: editForm.groups })
 
       // Update Password if provided
       if (editForm.password) {
-        await invoke("change_password", { username: editingUser.username, newPassword: editForm.password })
+        await api.invokeCommand("change_password", { username: editingUser.username, newPassword: editForm.password })
       }
 
       alert("User updated successfully")
@@ -248,6 +261,14 @@
               <label>Confirm Password</label>
               <input type="password" class="form-control" bind:value={addForm.confirmPassword} placeholder="Retype password">
             </div>
+            <div class="form-group">
+              <label>Role</label>
+              <select class="form-control" bind:value={addForm.role}>
+                <option value="guest">Guest (Portal Only)</option>
+                <option value="user_manager">User Manager (Manage Users)</option>
+                <option value="admin">Administrator (Full Access)</option>
+              </select>
+            </div>
           </div>
           <div class="modal-footer justify-content-between">
             <button type="button" class="btn btn-default" on:click={cancelAdd}>Close</button>
@@ -288,6 +309,14 @@
                 <div class="form-group">
                   <label>Email</label>
                   <input type="email" class="form-control" bind:value={editForm.email} placeholder="Email">
+                </div>
+                <div class="form-group">
+                  <label>Role</label>
+                  <select class="form-control" bind:value={editForm.role} disabled={editForm.username === 'admin'}>
+                    <option value="guest">Guest (Portal Only)</option>
+                    <option value="user_manager">User Manager (Manage Users)</option>
+                    <option value="admin">Administrator (Full Access)</option>
+                  </select>
                 </div>
                 <div class="form-group">
                   <label>Groups</label>
@@ -465,7 +494,15 @@
                                 {/if}
                           </td>
                           <td>{user.username}</td>
-                          <td>{user.role}</td>
+                          <td>
+                            {#if user.role === 'admin'}
+                              <span class="badge badge-danger">Admin</span>
+                            {:else if user.role === 'user_manager'}
+                              <span class="badge badge-info">User Manager</span>
+                            {:else}
+                              <span class="badge badge-secondary">Guest</span>
+                            {/if}
+                          </td>
                           <td>{user.groups.join(", ")}</td>
                           <td>
                             <button class="btn btn-info btn-xs" on:click={() => startEdit(user)}>

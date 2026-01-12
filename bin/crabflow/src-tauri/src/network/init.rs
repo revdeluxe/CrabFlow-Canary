@@ -1,8 +1,6 @@
 use crate::sysmodules::{logging, post, fetch, config, paths};
 use crate::network::{dhcp, dns};
 use tauri::AppHandle;
-use std::thread;
-use std::time::Duration;
 
 #[cfg(target_os = "windows")]
 use std::process::Command;

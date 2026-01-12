@@ -105,12 +105,12 @@ impl UserStore {
         let db = crate::sysmodules::db::get();
         
         // Update Users (Upsert)
-        for user in data.users {
+        for user in data.users.clone() {
             let _: Option<User> = db.update(("users", &user.username)).content(user).await.ok().flatten();
         }
         
         // Update Groups
-        for group in data.groups {
+        for group in data.groups.clone() {
             let _: Option<Group> = db.update(("groups", &group.name)).content(group).await.ok().flatten();
         }
         
@@ -429,4 +429,21 @@ pub fn sort_users_by(store: State<UserStore>, field: String, ascending: bool) ->
         _ => return Err("Invalid sort field".to_string()),
     }
     Ok(db.users.clone())
+}
+
+#[tauri::command]
+pub async fn update_user_role(store: State<'_, UserStore>, username: String, role: Role) -> Result<(), String> {
+    if username == "admin" && role != Role::Admin {
+        return Err("Cannot change role of root admin user".to_string());
+    }
+    {
+        let mut db = store.db.lock().map_err(|e| e.to_string())?;
+        if let Some(user) = db.users.iter_mut().find(|u| u.username == username) {
+            user.role = role;
+        } else {
+            return Err("User not found".to_string());
+        }
+    }
+    store.persist().await?;
+    Ok(())
 }

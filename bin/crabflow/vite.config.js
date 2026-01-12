@@ -17,7 +17,10 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     // FORCE 0.0.0.0 to allow access from other devices (Phone/Laptop)
-    host: '0.0.0.0', 
+    host: '0.0.0.0',
+    // Allow all hosts for headless/embedded systems (Raspberry Pi, etc.)
+    // Admins need to access the web UI remotely when there's no display
+    allowedHosts: true,  // Accept connections from any host/IP
     hmr: host
       ? {
           protocol: "ws",

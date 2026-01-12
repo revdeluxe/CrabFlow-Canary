@@ -1,6 +1,6 @@
 <script>
-  import { invoke } from '@tauri-apps/api/core'
   import { onMount } from 'svelte'
+  import { api } from '$lib/tauri'
 
   let blacklist = []
   let newDomain = ""
@@ -29,7 +29,7 @@
   async function loadBlacklist() {
     loading = true
     try {
-      blacklist = await invoke("get_blacklist")
+      blacklist = await api.invokeCommand("get_blacklist")
     } catch (e) {
       alert("Failed to load blacklist: " + e)
     } finally {
@@ -40,7 +40,7 @@
   async function addDomain() {
     if (!newDomain) return
     try {
-      await invoke("block_domain", { domain: newDomain })
+      await api.invokeCommand("block_domain", { domain: newDomain })
       newDomain = ""
       loadBlacklist()
     } catch (e) {
@@ -51,7 +51,7 @@
   async function removeDomain(domain) {
     if (!confirm(`Unblock ${domain}?`)) return
     try {
-      await invoke("unblock_domain", { domain })
+      await api.invokeCommand("unblock_domain", { domain })
       loadBlacklist()
     } catch (e) {
       alert("Failed to unblock domain: " + e)

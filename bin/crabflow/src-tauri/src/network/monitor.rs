@@ -199,9 +199,14 @@ pub fn stop_performance_logging() {
 
 /// Check internet connection quality (simple ping)
 pub fn check_connection_quality() -> bool {
-    // Windows ping: -n 1
+    #[cfg(target_os = "windows")]
+    let args = ["-n", "1", "-w", "1000", "8.8.8.8"];
+    
+    #[cfg(not(target_os = "windows"))]
+    let args = ["-c", "1", "-W", "1", "8.8.8.8"];
+    
     let output = Command::new("ping")
-        .args(["-n", "1", "8.8.8.8"])
+        .args(args)
         .output();
 
     match output {
@@ -353,14 +358,44 @@ pub fn log_system_status() {
 #[tauri::command]
 pub fn start_wlan_monitoring(interface: String) {
     logging::log_info(&format!("Starting WLAN monitoring on {}", interface));
-    // Real implementation requires pcap/AirPcap on Windows
-    // For now, we list visible networks
-    let output = Command::new("netsh")
-        .args(["wlan", "show", "networks", "mode=bssid"])
-        .output();
-        
-    if let Ok(o) = output {
-        let result = String::from_utf8_lossy(&o.stdout);
-        logging::log_debug(&format!("WLAN Scan Results:\n{}", result));
+    
+    #[cfg(target_os = "windows")]
+    {
+        // Real implementation requires pcap/AirPcap on Windows
+        // For now, we list visible networks
+        let output = Command::new("netsh")
+            .args(["wlan", "show", "networks", "mode=bssid"])
+            .output();
+            
+        if let Ok(o) = output {
+            let result = String::from_utf8_lossy(&o.stdout);
+            logging::log_debug(&format!("WLAN Scan Results:\n{}", result));
+        }
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, use iwlist or iw to scan
+        let output = Command::new("iwlist")
+            .args([&interface, "scan"])
+            .output();
+            
+        if let Ok(o) = output {
+            let result = String::from_utf8_lossy(&o.stdout);
+            logging::log_debug(&format!("WLAN Scan Results:\n{}", result));
+        }
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, use airport utility
+        let output = Command::new("/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport")
+            .args(["-s"])
+            .output();
+            
+        if let Ok(o) = output {
+            let result = String::from_utf8_lossy(&o.stdout);
+            logging::log_debug(&format!("WLAN Scan Results:\n{}", result));
+        }
     }
 }

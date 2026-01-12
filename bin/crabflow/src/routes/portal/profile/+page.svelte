@@ -2,7 +2,6 @@
   import { onMount } from 'svelte'
   import { session } from '$lib/stores/session'
   import { api } from '$lib/tauri'
-  import { convertFileSrc } from '@tauri-apps/api/core'
 
   let user = {
     username: 'User',
@@ -22,7 +21,13 @@
             // Load profile image if available
             if (user.id_document_path) {
               try {
-                profileImageUrl = convertFileSrc(user.id_document_path)
+                if (api.isTauri()) {
+                  const { convertFileSrc } = await import('@tauri-apps/api/core')
+                  profileImageUrl = convertFileSrc(user.id_document_path)
+                } else {
+                  // In browser, serve the path directly if it's an http path
+                  profileImageUrl = user.id_document_path
+                }
               } catch (e) {
                 console.warn('Could not load profile image:', e)
               }
@@ -64,7 +69,12 @@
             const users = await api.listUsers();
             const dbUser = users.find(u => u.username === user.username);
             if (dbUser && dbUser.id_document_path) {
-              profileImageUrl = convertFileSrc(dbUser.id_document_path);
+              if (api.isTauri()) {
+                const { convertFileSrc } = await import('@tauri-apps/api/core')
+                profileImageUrl = convertFileSrc(dbUser.id_document_path);
+              } else {
+                profileImageUrl = dbUser.id_document_path;
+              }
             }
             alert("Profile picture uploaded successfully!");
         } catch (err) {

@@ -49,7 +49,11 @@ pub async fn start_server(user_store: UserStore, session_store: SessionStore) {
         .route("/api/auth/login", post(login_handler))
         .route("/api/auth/register", post(register_handler))
         .route("/api/auth/check", post(check_auth_handler))
+        .route("/api/auth/logout", post(logout_handler))
         .route("/api/users", get(list_users_handler))
+        // Portal API Routes (for browser access)
+        .route("/api/portal/template", get(get_portal_template_handler))
+        .route("/api/portal/tag", post(tag_user_handler))
         // Captive Portal Detection Routes (must match what devices check)
         .route("/connecttest.txt", get(captive_portal_windows))
         .route("/ncsi.txt", get(captive_portal_windows))
@@ -246,6 +250,87 @@ async fn list_users_handler(State(state): State<AppState>) -> Json<Vec<User>> {
         Ok(db) => Json(db.users.clone()),
         Err(_) => Json(vec![]) // Return empty list on error instead of panic
     }
+}
+
+async fn logout_handler(
+    State(state): State<AppState>,
+    Json(req): Json<TokenRequest>,
+) -> Json<Value> {
+    match state.session_store.sessions.lock() {
+        Ok(mut sessions) => {
+            if sessions.remove(&req.token).is_some() {
+                logging::log_info("Session logged out successfully");
+                Json(json!({"success": true, "message": "Logged out successfully"}))
+            } else {
+                Json(json!({"success": true, "message": "Session not found but ok"}))
+            }
+        }
+        Err(_) => Json(json!({"success": false, "message": "Session store error"}))
+    }
+}
+
+async fn get_portal_template_handler() -> Json<Value> {
+    match crate::network::cportal::get_portal_template() {
+        Ok(html) => Json(json!(html)),
+        Err(e) => Json(json!({"error": e}))
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct TagUserRequest {
+    username: String,
+    ip: String,
+    device_name: Option<String>,
+}
+
+async fn tag_user_handler(
+    State(state): State<AppState>,
+    Json(req): Json<TagUserRequest>,
+) -> Json<Value> {
+    // Simplified tag_user for HTTP - without Tauri AppHandle for notifications
+    let mac = if req.ip == "127.0.0.1" || req.ip == "localhost" {
+        "00:00:00:00:00:00".to_string()
+    } else {
+        match dhcp::get_mac_from_ip(&req.ip) {
+            Some(m) => m,
+            None => {
+                logging::log_warn(&format!("Tagging user {} with unknown MAC (IP: {})", req.username, req.ip));
+                "UNKNOWN_MAC".to_string()
+            }
+        }
+    };
+
+    {
+        let mut db = match state.user_store.db.lock() {
+            Ok(db) => db,
+            Err(e) => return Json(json!({"success": false, "error": e.to_string()})),
+        };
+
+        if let Some(user) = db.users.iter_mut().find(|u| u.username == req.username) {
+            use chrono::Utc;
+            use crate::user_management::user::LoginRecord;
+            
+            let now = Utc::now();
+            let record = LoginRecord {
+                ip: req.ip.clone(),
+                mac: mac.clone(),
+                timestamp: now.to_rfc3339(),
+                device_name: req.device_name,
+            };
+            user.login_history.push(record);
+        } else {
+            return Json(json!({"success": false, "error": format!("User not found: {}", req.username)}));
+        }
+    }
+
+    // Whitelist the user so DNS stops hijacking them
+    dns::authorize_ip(req.ip.clone());
+    
+    // Persist changes
+    let _ = state.user_store.persist().await;
+
+    logging::log_info(&format!("Tagged user {} from IP {}", req.username, req.ip));
+    Json(json!({"success": true}))
 }
 
 // ============================================================================

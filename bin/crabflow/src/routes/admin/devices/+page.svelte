@@ -1,6 +1,6 @@
 <script>
-  import { invoke } from '@tauri-apps/api/core'
   import { onMount } from 'svelte'
+  import { api } from '$lib/tauri'
 
   let leases = []
   let loading = true
@@ -15,7 +15,7 @@
 
   async function refresh() {
     try {
-      leases = await invoke("list_leases")
+      leases = await api.invokeCommand("list_leases")
     } catch (e) {
       console.error("Failed to load leases:", e)
       error = e
@@ -24,7 +24,7 @@
 
   async function addStaticLease() {
     try {
-      await invoke("add_static_lease", { input: newLease })
+      await api.invokeCommand("add_static_lease", { input: newLease })
       newLease = { ip: "", mac: "", hostname: "" }
       refresh()
       showModal = false
@@ -37,7 +37,7 @@
   async function removeLease(ip) {
     if (!confirm(`Are you sure you want to remove lease for ${ip}?`)) return
     try {
-      await invoke("remove_lease", { ip })
+      await api.invokeCommand("remove_lease", { ip })
       refresh()
     } catch (e) {
       alert("Failed to remove lease: " + e)

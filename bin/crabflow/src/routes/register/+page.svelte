@@ -1,7 +1,6 @@
 <script>
   import { api } from '$lib/tauri'
   import { goto } from '$app/navigation'
-  import { onMount, onDestroy } from 'svelte'
 
   let username = ""
   let password = ""
@@ -16,20 +15,24 @@
       return
     }
     
+    if (password.length < 4) {
+      error = "Password must be at least 4 characters"
+      return
+    }
+    
     loading = true
     error = null
     success = null
 
     try {
       const result = await api.registerUser(username, password)
-      // API returns {message: "..."} or {error: "..."}
       if (result.error) {
         error = result.error
       } else {
-        success = result.message || "Registration successful. Please wait for admin approval."
+        success = result.message || "Registration successful! Redirecting to login..."
         setTimeout(() => {
           goto("/")
-        }, 3000)
+        }, 2000)
       }
     } catch (e) {
       error = "Registration failed: " + (e.message || e)
@@ -37,85 +40,86 @@
       loading = false
     }
   }
-
-  onMount(() => {
-      document.body.classList.add('register-page');
-  });
-  
-  onDestroy(() => {
-      document.body.classList.remove('register-page');
-  });
 </script>
 
-<div class="register-box">
-  <div class="card card-outline card-primary">
-    <div class="card-header text-center">
-      <a href="/" class="h1"><b>Crab</b>Flow</a>
+<div class="auth-page">
+  <div class="auth-container">
+    <div class="auth-card">
+      <div class="auth-header">
+        <a href="/" class="auth-logo"><b>Crab</b>Flow</a>
+        <p class="auth-subtitle">Create your account</p>
+      </div>
+      
+      <div class="auth-body">
+        {#if error}
+          <div class="auth-alert auth-alert-error">
+            <i class="fas fa-exclamation-circle"></i>
+            {error}
+          </div>
+        {/if}
+
+        {#if success}
+          <div class="auth-alert auth-alert-success">
+            <i class="fas fa-check-circle"></i>
+            {success}
+          </div>
+        {/if}
+
+        <form on:submit|preventDefault={doRegister}>
+          <div class="auth-input-group">
+            <input 
+              type="text" 
+              class="auth-input" 
+              placeholder="Username" 
+              bind:value={username}
+              autocomplete="username"
+              required
+              minlength="3"
+            >
+            <i class="fas fa-user auth-input-icon"></i>
+          </div>
+          
+          <div class="auth-input-group">
+            <input 
+              type="password" 
+              class="auth-input" 
+              placeholder="Password" 
+              bind:value={password}
+              autocomplete="new-password"
+              required
+              minlength="4"
+            >
+            <i class="fas fa-lock auth-input-icon"></i>
+          </div>
+          
+          <div class="auth-input-group">
+            <input 
+              type="password" 
+              class="auth-input" 
+              placeholder="Confirm Password" 
+              bind:value={confirmPassword}
+              autocomplete="new-password"
+              required
+            >
+            <i class="fas fa-lock auth-input-icon"></i>
+          </div>
+          
+          <button type="submit" class="auth-btn auth-btn-primary" disabled={loading}>
+            {#if loading}
+              <i class="fas fa-spinner fa-spin me-2"></i>
+              Creating Account...
+            {:else}
+              <i class="fas fa-user-plus me-2"></i>
+              Create Account
+            {/if}
+          </button>
+        </form>
+      </div>
+      
+      <div class="auth-footer">
+        <span>Already have an account? </span>
+        <a href="/" class="auth-link">Sign in</a>
+      </div>
     </div>
-    <div class="card-body">
-      <p class="login-box-msg">Register a new membership</p>
-
-      {#if error}
-        <div class="alert alert-danger">
-            <i class="icon fas fa-ban"></i> {error}
-        </div>
-      {/if}
-
-      {#if success}
-        <div class="alert alert-success">
-            <i class="icon fas fa-check"></i> {success}
-        </div>
-      {/if}
-
-      <form on:submit|preventDefault={doRegister}>
-        <div class="input-group mb-3">
-          <input type="text" class="form-control" placeholder="Username" bind:value={username} required>
-          <div class="input-group-append">
-            <div class="input-group-text">
-              <span class="fas fa-user"></span>
-            </div>
-          </div>
-        </div>
-        <div class="input-group mb-3">
-          <input type="password" class="form-control" placeholder="Password" bind:value={password} required>
-          <div class="input-group-append">
-            <div class="input-group-text">
-              <span class="fas fa-lock"></span>
-            </div>
-          </div>
-        </div>
-        <div class="input-group mb-3">
-          <input type="password" class="form-control" placeholder="Retype password" bind:value={confirmPassword} required>
-          <div class="input-group-append">
-            <div class="input-group-text">
-              <span class="fas fa-lock"></span>
-            </div>
-          </div>
-        </div>
-        <div class="row">
-          <div class="col-8">
-            <div class="icheck-primary">
-              <!-- Checkbox for terms could go here -->
-            </div>
-          </div>
-          <!-- /.col -->
-          <div class="col-4">
-            <button type="submit" class="btn btn-primary btn-block" disabled={loading}>
-                {loading ? '...' : 'Register'}
-            </button>
-          </div>
-          <!-- /.col -->
-        </div>
-      </form>
-
-      <a href="/" class="text-center mt-2 d-block">I already have a membership</a>
-    </div>
-    <!-- /.form-box -->
-  </div><!-- /.card -->
+  </div>
 </div>
-<!-- /.register-box -->
-
-<style>
-    /* Ensure the box is centered vertically in the page if the body class handles the flex centering */
-    /* .register-page class on body in AdminLTE usually handles this min-height and centering */
-</style>

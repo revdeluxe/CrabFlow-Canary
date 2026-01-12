@@ -1,6 +1,6 @@
 <script>
-  import { invoke } from '@tauri-apps/api/core'
   import { onMount } from 'svelte'
+  import { api } from '$lib/tauri'
 
   let rules = []
   let loading = true
@@ -20,7 +20,7 @@
 
   async function refresh() {
     try {
-      rules = await invoke("list_firewall_rules")
+      rules = await api.invokeCommand("list_firewall_rules")
     } catch (e) {
       console.error("Failed to load rules:", e)
       alert("Failed to load rules: " + e)

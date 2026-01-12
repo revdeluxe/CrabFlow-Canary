@@ -1,6 +1,6 @@
 <script>
-  import { invoke } from '@tauri-apps/api/core'
   import { onMount, onDestroy } from 'svelte'
+  import { api } from '$lib/tauri'
   import DnsLogsModal from '$lib/components/DnsLogsModal.svelte'
 
   let logs = []
@@ -23,7 +23,7 @@
 
   async function refreshStatus() {
     try {
-      systemStatus = await invoke("get_system_status")
+      systemStatus = await api.invokeCommand("get_system_status")
     } catch (e) {
       console.error("Failed to get system status:", e)
     }
@@ -32,7 +32,7 @@
   let interfaces = []
   async function refreshInterfaces() {
       try {
-          interfaces = await invoke("list_interfaces")
+          interfaces = await api.invokeCommand("list_interfaces")
       } catch (e) {
           console.error("Failed to list interfaces:", e)
       }
@@ -40,7 +40,7 @@
 
   async function refreshDnsStats() {
     try {
-      const logs = await invoke("get_query_logs", { limit: 1000 })
+      const logs = await api.invokeCommand("get_query_logs", { limit: 1000 })
       const total = logs.length
       const blocked = logs.filter(l => l.status === 'Blocked').length
       const percentage = total > 0 ? ((blocked / total) * 100).toFixed(1) : 0
@@ -52,7 +52,7 @@
 
   async function refreshLogs() {
     try {
-      logs = await invoke("get_logs", { limit: 100 })
+      logs = await api.invokeCommand("get_logs", { limit: 100 })
     } catch (e) {
       console.error("Failed to get logs:", e)
     }

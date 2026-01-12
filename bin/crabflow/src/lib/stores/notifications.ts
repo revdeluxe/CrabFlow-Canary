@@ -1,5 +1,7 @@
 import { writable } from 'svelte/store';
-import { listen } from '@tauri-apps/api/event';
+
+// Check if running in Tauri
+const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__;
 
 export interface Notification {
   id: number;
@@ -34,7 +36,14 @@ export const notifications = {
   },
   
   listenForEvents: async () => {
+    // Only listen for Tauri events when in Tauri context
+    if (!isTauri) {
+      console.log("Not in Tauri context, skipping event listener");
+      return;
+    }
+    
     try {
+        const { listen } = await import('@tauri-apps/api/event');
         await listen('notification-event', (event: any) => {
             const payload = event.payload;
             notifications.add(payload);

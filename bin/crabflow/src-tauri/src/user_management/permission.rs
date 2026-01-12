@@ -13,7 +13,8 @@ pub enum Permission {
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     Admin,
-    Staff,
+    Staff, // Kept for backward compatibility if needed, or treated as UserManager
+    UserManager,
     Guest,
 }
 
@@ -26,7 +27,7 @@ impl Role {
                 Permission::ManageUsers,
                 Permission::InternetAccess,
             ],
-            Role::Staff => vec![
+            Role::Staff | Role::UserManager => vec![
                 Permission::ViewLogs,
                 Permission::ManageUsers,
             ],

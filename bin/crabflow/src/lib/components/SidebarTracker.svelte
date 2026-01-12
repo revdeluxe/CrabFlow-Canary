@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte'
-  import { invoke } from '@tauri-apps/api/tauri'
+
+  // Check if running in Tauri
+  const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
 
   let stats = {
     users: 0,
@@ -15,7 +17,10 @@
   }
 
   async function refreshStats() {
+    if (!isTauri) return;
+    
     try {
+      const { invoke } = await import('@tauri-apps/api/core');
       stats.users = await invoke("count_users")
       stats.sessions = await invoke("count_sessions")
       stats.logs = await invoke("count_logs")

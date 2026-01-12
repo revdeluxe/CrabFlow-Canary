@@ -84,6 +84,8 @@ pub struct AdvancedConfig {
     pub dns_read_timeout_ms: u64,
     pub dhcp_lease_duration_sec: u64,
     pub captive_portal_domain: String,
+    #[serde(default)]
+    pub headless_setup_enabled: bool,
 }
 
 impl Default for AdvancedConfig {
@@ -92,6 +94,7 @@ impl Default for AdvancedConfig {
             dns_read_timeout_ms: 2000,
             dhcp_lease_duration_sec: 7200,
             captive_portal_domain: "portal.crabflow.local".into(),
+            headless_setup_enabled: false,
         }
     }
 }

@@ -1,6 +1,6 @@
 <script>
-  import { invoke } from '@tauri-apps/api/core'
   import { onMount } from 'svelte'
+  import { api } from '$lib/tauri'
 
   let activeTab = 'captive-portal'
   let loading = true
@@ -70,7 +70,7 @@
   async function loadConfig() {
     loading = true
     try {
-      const config = await invoke('get_acl_config')
+      const config = await api.invokeCommand('get_acl_config')
       
       // Captive Portal
       captivePortalEnabled = config.captive_portal?.enabled ?? false
@@ -107,13 +107,13 @@
     }
     
     try {
-      availableInterfaces = await invoke('list_interfaces')
+      availableInterfaces = await api.invokeCommand('list_interfaces')
     } catch (e) {
       console.error('Failed to load interfaces:', e)
     }
     
     try {
-      availableGroups = await invoke('list_groups')
+      availableGroups = await api.invokeCommand('list_groups')
     } catch (e) {
       console.error('Failed to load groups:', e)
       availableGroups = []
@@ -125,7 +125,7 @@
   async function saveConfig() {
     saving = true
     try {
-      await invoke('save_acl_config', {
+      await api.invokeCommand('save_acl_config', {
         config: {
           captive_portal: {
             enabled: captivePortalEnabled,

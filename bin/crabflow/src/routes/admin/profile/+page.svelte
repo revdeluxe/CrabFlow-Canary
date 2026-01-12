@@ -3,7 +3,7 @@
   import { api } from '$lib/tauri'
   import { session } from '$lib/stores/session'
   import { get } from 'svelte/store'
-  import { convertFileSrc } from '@tauri-apps/api/core'
+  // convertFileSrc loaded dynamically in Tauri context
 
   let user = {
     username: 'Admin',
@@ -44,7 +44,12 @@
         // Load profile image if available
         if (user.id_document_path) {
           try {
-            profileImageUrl = convertFileSrc(user.id_document_path)
+            if (api.isTauri()) {
+              const { convertFileSrc } = await import('@tauri-apps/api/core')
+              profileImageUrl = convertFileSrc(user.id_document_path)
+            } else {
+              profileImageUrl = user.id_document_path
+            }
           } catch (e) {
             console.warn('Could not load profile image:', e)
           }

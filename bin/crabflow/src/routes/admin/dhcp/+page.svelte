@@ -1,6 +1,6 @@
 <script>
-  import { invoke } from '@tauri-apps/api/core'
   import { onMount, onDestroy } from 'svelte'
+  import { api } from '$lib/tauri'
 
   let leases = []
   let loading = true
@@ -39,15 +39,15 @@
 
   async function refresh() {
     try {
-      leases = await invoke("list_leases")
+      leases = await api.invokeCommand("list_leases")
       
       // Get live stats for DHCP server status
-      const liveStats = await invoke('get_live_stats')
+      const liveStats = await api.invokeCommand('get_live_stats')
       serverStatus.running = liveStats.services_status.dhcp
       
       // Try to get DHCP config for pool info
       try {
-        const config = await invoke("load_setup")
+        const config = await api.invokeCommand("load_setup")
         if (config && config.dhcp) {
           serverStatus.pool_start = config.dhcp.range_start || ''
           serverStatus.pool_end = config.dhcp.range_end || ''
@@ -66,7 +66,7 @@
 
   async function addStaticLease() {
     try {
-      await invoke("add_static_lease", { input: newLease })
+      await api.invokeCommand("add_static_lease", { input: newLease })
       newLease = { ip: "", mac: "", hostname: "" }
       refresh()
       showModal = false

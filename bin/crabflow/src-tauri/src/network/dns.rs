@@ -93,16 +93,36 @@ pub fn list_records() -> Vec<DnsRecord> {
     RECORDS_CACHE.read().unwrap().clone()
 }
 
-/// Add a DNS record
+/// Add a DNS record (prevents duplicates)
 pub fn add_record(input: DnsRecordInput) -> Result<(), String> {
     let mut records = list_records(); // Get current copy
     let name_for_log = input.name.clone();
-    records.push(DnsRecord {
-        name: input.name,
-        rtype: input.rtype,
-        value: input.value,
-        ttl: input.ttl,
-    });
+    
+    // Check for duplicate: same name and type
+    let exists = records.iter().any(|r| 
+        r.name.to_lowercase() == input.name.to_lowercase() && 
+        r.rtype.to_uppercase() == input.rtype.to_uppercase()
+    );
+    
+    if exists {
+        // Update existing record instead of adding duplicate
+        for rec in records.iter_mut() {
+            if rec.name.to_lowercase() == input.name.to_lowercase() && 
+               rec.rtype.to_uppercase() == input.rtype.to_uppercase() {
+                rec.value = input.value.clone();
+                rec.ttl = input.ttl;
+                break;
+            }
+        }
+        logging::log_info(&format!("Updated existing DNS record: {}", name_for_log));
+    } else {
+        records.push(DnsRecord {
+            name: input.name,
+            rtype: input.rtype,
+            value: input.value,
+            ttl: input.ttl,
+        });
+    }
 
     // Update Cache
     {

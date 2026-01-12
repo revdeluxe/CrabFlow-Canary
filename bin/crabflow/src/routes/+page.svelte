@@ -6,11 +6,11 @@
 
   let username = ""
   let password = ""
+  let rememberMe = false
   let error = null
   let loading = true
 
   onMount(async () => {
-    document.body.classList.add('login-page');
     try {
       // Check if already logged in
       const token = localStorage.getItem('session_token')
@@ -18,7 +18,7 @@
         const user = await api.checkAuth(token)
         if (user) {
           session.set({ user, token })
-          if (user.role === "admin" || user.username === "admin") { // Fallback if role is missing
+          if (["admin", "user_manager", "staff"].includes(user.role) || user.username === "admin") {
             goto("/admin/dashboard")
             return
           } else {
@@ -39,13 +39,8 @@
     }
   })
 
-  onDestroy(() => {
-    if (typeof document !== 'undefined') {
-        document.body.classList.remove('login-page');
-    }
-  })
-
   async function doLogin() {
+    error = null
     try {
       const result = await api.login(username, password)
       
@@ -58,15 +53,13 @@
         // Persist token
         localStorage.setItem('session_token', result.token)
 
-        error = null
-
-        if (result.user.role === "admin") {
+        if (["admin", "user_manager", "staff"].includes(result.user.role)) {
           goto("/admin/dashboard")
         } else {
           goto("/portal/dashboard")
         }
       } else {
-        error = result.message
+        error = result.message || "Invalid credentials"
       }
     } catch (e) {
       error = "Login failed: " + e
@@ -76,66 +69,68 @@
 </script>
 
 {#if loading}
-  <div class="d-flex justify-content-center align-items-center" style="height: 100vh;">
-    <div class="spinner-border text-primary" role="status">
-      <span class="sr-only">Loading...</span>
-    </div>
+  <div class="auth-loading">
+    <div class="auth-spinner"></div>
   </div>
 {:else}
-<div class="login-box" style="margin: 10vh auto;">
-  <div class="login-logo">
-    <a href="/"><b>Crab</b>Flow</a>
-  </div>
-  <!-- /.login-logo -->
-  <div class="card">
-    <div class="card-body login-card-body">
-      <p class="login-box-msg">Sign in to start your session</p>
-
-      {#if error}
-        <div class="alert alert-danger">
-          {error}
+  <div class="auth-page">
+    <div class="auth-container">
+      <div class="auth-card">
+        <div class="auth-header">
+          <a href="/" class="auth-logo"><b>Crab</b>Flow</a>
+          <p class="auth-subtitle">Network Management System</p>
         </div>
-      {/if}
-
-      <form on:submit|preventDefault={doLogin}>
-        <div class="input-group mb-3">
-          <input type="text" class="form-control" placeholder="Username" bind:value={username}>
-          <div class="input-group-append">
-            <div class="input-group-text">
-              <span class="fas fa-user"></span>
+        
+        <div class="auth-body">
+          {#if error}
+            <div class="auth-alert auth-alert-error">
+              <i class="fas fa-exclamation-circle"></i>
+              {error}
             </div>
-          </div>
-        </div>
-        <div class="input-group mb-3">
-          <input type="password" class="form-control" placeholder="Password" bind:value={password}>
-          <div class="input-group-append">
-            <div class="input-group-text">
-              <span class="fas fa-lock"></span>
-            </div>
-          </div>
-        </div>
-        <div class="row">
-          <div class="col-8">
-            <div class="icheck-primary">
-              <input type="checkbox" id="remember">
-              <label for="remember">
-                Remember Me
-              </label>
-            </div>
-          </div>
-          <!-- /.col -->
-          <div class="col-4">
-            <button type="submit" class="btn btn-primary btn-block">Sign In</button>
-          </div>
-          <!-- /.col -->
-        </div>
-      </form>
+          {/if}
 
-      <p class="mb-0">
-        <a href="/register" class="text-center">Register a new membership</a>
-      </p>
+          <form on:submit|preventDefault={doLogin}>
+            <div class="auth-input-group">
+              <input 
+                type="text" 
+                class="auth-input" 
+                placeholder="Username" 
+                bind:value={username}
+                autocomplete="username"
+                required
+              >
+              <i class="fas fa-user auth-input-icon"></i>
+            </div>
+            
+            <div class="auth-input-group">
+              <input 
+                type="password" 
+                class="auth-input" 
+                placeholder="Password" 
+                bind:value={password}
+                autocomplete="current-password"
+                required
+              >
+              <i class="fas fa-lock auth-input-icon"></i>
+            </div>
+            
+            <label class="auth-checkbox">
+              <input type="checkbox" bind:checked={rememberMe}>
+              <span>Remember me</span>
+            </label>
+            
+            <button type="submit" class="auth-btn auth-btn-primary">
+              <i class="fas fa-sign-in-alt me-2"></i>
+              Sign In
+            </button>
+          </form>
+        </div>
+        
+        <div class="auth-footer">
+          <span>Don't have an account? </span>
+          <a href="/register" class="auth-link">Create one</a>
+        </div>
+      </div>
     </div>
-    <!-- /.login-card-body -->
   </div>
-</div>
 {/if}

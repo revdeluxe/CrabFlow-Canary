@@ -2,6 +2,11 @@
   import { api } from '$lib/tauri'
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
+  
+  // Accordion states (collapsed by default)
+  let showPowerManagement = false
+  let showDangerZone = false
+  let showHeadless = false
 
   let setupConfig = {
     hostname: "",
@@ -43,7 +48,68 @@
   let interfaces = []
   let showModal = false
   let showRiskModal = false
+  let showHeadlessModal = false
+  let headlessPassword = ""
+  let headlessPasswordStrength = "weak" // weak, medium, strong
+  let headlessPasswordMessage = ""
   let loading = true
+
+  function checkPasswordStrength(password) {
+    if (password.length < 8) return "weak";
+    const hasUpper = /[A-Z]/.test(password);
+    const hasLower = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecial = /[^A-Za-z0-9]/.test(password);
+    
+    let score = 0;
+    if (hasUpper) score++;
+    if (hasLower) score++;
+    if (hasNumber) score++;
+    if (hasSpecial) score++;
+
+    if (score >= 3 && password.length >= 10) return "strong";
+    if (score >= 2 && password.length >= 8) return "medium";
+    return "weak";
+  }
+
+  $: {
+    headlessPasswordStrength = checkPasswordStrength(headlessPassword);
+    if (headlessPasswordStrength === "weak") {
+      headlessPasswordMessage = "Password is too weak. Must be at least 8 characters and include mix of letters/numbers.";
+    } else if (headlessPasswordStrength === "medium") {
+      headlessPasswordMessage = "Password is okay, but could be stronger.";
+    } else {
+      headlessPasswordMessage = "Password is strong.";
+    }
+  }
+
+  function toggleHeadless() {
+    if (!setupConfig.advanced.headless_setup_enabled) {
+      // User enabling it -> show warning
+      headlessPassword = ""; // reset
+      showHeadlessModal = true;
+    } else {
+      // Disabling -> just do it
+      setupConfig.advanced.headless_setup_enabled = false;
+    }
+  }
+
+  async function confirmHeadless() {
+    // If user entered a new password, change it
+    if (headlessPassword) {
+      try {
+        await api.invokeCommand("change_password", { username: setupConfig.admin_user, newPassword: headlessPassword });
+        setupConfig.admin_pass = headlessPassword; // Update local config ref too if needed, though mostly backend matters
+        alert("Root admin password updated.");
+      } catch (e) {
+        alert("Failed to update password: " + e);
+        return;
+      }
+    }
+    
+    setupConfig.advanced.headless_setup_enabled = true;
+    showHeadlessModal = false;
+  }
 
   onMount(async () => {
     try {
@@ -92,6 +158,18 @@
           password: "password123",
           interface: "Wi-Fi"
         }
+      }
+
+      // Ensure advanced object exists
+      if (!setupConfig.advanced) {
+        setupConfig.advanced = {
+          dns_read_timeout_ms: 2000,
+          dhcp_lease_duration_sec: 7200,
+          captive_portal_domain: "portal.crabflow.local",
+          headless_setup_enabled: false
+        }
+      } else if (setupConfig.advanced.headless_setup_enabled === undefined) {
+        setupConfig.advanced.headless_setup_enabled = false;
       }
 
       userSettings = userSet
@@ -422,15 +500,37 @@
         </div>
       </div>
 
+      <!-- Headless Setup -->
+      <div class="card card-purple">
+        <div class="card-header">
+          <h3 class="card-title">Headless Setup & Remote Access</h3>
+          <div class="card-tools">
+            <button type="button" class="btn btn-tool" on:click={() => showHeadless = !showHeadless}><i class="fas {showHeadless ? 'fa-minus' : 'fa-plus'}"></i></button>
+          </div>
+        </div>
+        <div class="card-body" class:d-none={!showHeadless}>
+          <p>
+            Configure access for headless deployment (e.g., Raspberry Pi). Enabling this allows remote access to the setup wizard and admin panel.
+          </p>
+          <div class="form-group">
+            <div class="custom-control custom-switch">
+              <input type="checkbox" class="custom-control-input" id="headlessSwitch" checked={setupConfig.advanced.headless_setup_enabled} on:click|preventDefault={toggleHeadless}>
+              <label class="custom-control-label" for="headlessSwitch">Enable Headless Setup / Remote Access</label>
+            </div>
+            <small class="form-text text-muted">Warning: This exposes the admin interface to the network.</small>
+          </div>
+        </div>
+      </div>
+
       <!-- Power Management -->
-      <div class="card card-warning collapsed-card">
+      <div class="card card-warning">
         <div class="card-header">
           <h3 class="card-title">Power Management</h3>
           <div class="card-tools">
-            <button type="button" class="btn btn-tool" data-card-widget="collapse"><i class="fas fa-plus"></i></button>
+            <button type="button" class="btn btn-tool" on:click={() => showPowerManagement = !showPowerManagement}><i class="fas {showPowerManagement ? 'fa-minus' : 'fa-plus'}"></i></button>
           </div>
         </div>
-        <div class="card-body">
+        <div class="card-body" class:d-none={!showPowerManagement}>
           <p>Control system power and service states.</p>
           <div class="row">
             <div class="col-md-4">
@@ -452,14 +552,14 @@
         </div>
       </div>
 
-      <div class="card card-danger card-outline collapsed-card">
+      <div class="card card-danger card-outline">
         <div class="card-header">
           <h3 class="card-title">Danger Zone</h3>
           <div class="card-tools">
-            <button type="button" class="btn btn-tool" data-card-widget="collapse"><i class="fas fa-plus"></i></button>
+            <button type="button" class="btn btn-tool" on:click={() => showDangerZone = !showDangerZone}><i class="fas {showDangerZone ? 'fa-minus' : 'fa-plus'}"></i></button>
           </div>
         </div>
-        <div class="card-body">
+        <div class="card-body" class:d-none={!showDangerZone}>
           <p>Resetting the setup will require you to run the initial configuration wizard again.</p>
           <button class="btn btn-danger" on:click={() => showModal = true}>Reinitialize Setup Wizard</button>
         </div>
@@ -467,6 +567,52 @@
     {/if}
   </div>
 </section>
+
+{#if showHeadlessModal}
+  <div class="modal fade show" style="display: block; background: rgba(0,0,0,0.5);">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-warning">
+          <h4 class="modal-title"><i class="fas fa-exclamation-triangle"></i> Security Warning</h4>
+          <button type="button" class="close" on:click={() => showHeadlessModal = false}>
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p>Enabling <strong>Headless Setup</strong> allows anyone on the local network to access the CrabFlow admin interface.</p>
+          <p>It is <strong>highly advised</strong> to ensure your root admin password is strong before proceeding.</p>
+          
+          <hr>
+          
+          <div class="form-group">
+            <label>Update Root Admin Password (Recommended)</label>
+            <input type="password" class="form-control" bind:value={headlessPassword} placeholder="Enter new strong password (optional)">
+            
+            {#if headlessPassword}
+              <div class="mt-2">
+                <strong>Strength: </strong>
+                <span class:text-danger={headlessPasswordStrength === 'weak'} 
+                      class:text-warning={headlessPasswordStrength === 'medium'} 
+                      class:text-success={headlessPasswordStrength === 'strong'}>
+                  {headlessPasswordStrength.toUpperCase()}
+                </span>
+                <p class="small text-muted mb-0">{headlessPasswordMessage}</p>
+              </div>
+            {/if}
+          </div>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-default" on:click={() => showHeadlessModal = false}>Cancel</button>
+          <button type="button" class="btn btn-warning" 
+                  disabled={headlessPassword && headlessPasswordStrength === 'weak'} 
+                  on:click={confirmHeadless}>
+            <i class="fas fa-check"></i> I Understand, Proceed
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if showRiskModal}
   <div class="modal fade show" style="display: block; background: rgba(0,0,0,0.5);">

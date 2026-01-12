@@ -14,102 +14,57 @@ use std::sync::Mutex;
 use user_management::user::UserStore;
 use user_management::auth::SessionStore;
 use sysinfo::System;
-
+use is_elevated::is_elevated;
 use std::process::Command;
 use std::env;
 
 // Import tracing subscriber
 use tracing_subscriber;
 
-#[cfg(target_os = "linux")]
-fn check_is_elevated() -> bool {
-    // On Linux, check if the Effective User ID (euid) is 0 (Root)
-    // We use the filesystem hack to avoid adding the 'libc' dependency
-    use std::os::unix::fs::MetadataExt;
-    if let Ok(metadata) = std::fs::metadata("/proc/self") {
-        return metadata.uid() == 0;
-    }
-    false
-}
-
-#[cfg(target_os = "macos")]
-fn check_is_elevated() -> bool {
-    // On macOS, 'id -u' is the safest way without external dependencies (libc)
-    if let Ok(output) = Command::new("id").arg("-u").output() {
-        if let Ok(uid_str) = String::from_utf8(output.stdout) {
-            return uid_str.trim() == "0";
-        }
-    }
-    false
-}
-
-#[cfg(target_os = "windows")]
-fn check_is_elevated() -> bool {
-    // On Windows, checking admin rights without a crate is very verbose.
-    // For this setup wizard, we can often skip the strict check in 'main'
-    // because the 'startup_process' logic will fail later if permissions are missing.
-    // Or, we rely on the manifest to force admin.
-    true // Assume true or implement complex winapi check if needed
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn check_is_elevated() -> bool {
-    // Unsupported platform fallback
-    eprintln!("Warning: Privilege check not implemented for this platform");
-    true
-}
-
 // --- HELPER: Cross-Platform Self-Elevation ---
-#[cfg(target_os = "linux")]
 fn try_relaunch_as_admin() {
     let exe = env::current_exe().expect("Failed to get current executable path");
-    println!("Requesting administrative privileges...");
-
-    // On Linux, we forward DISPLAY and XAUTHORITY so the GUI works as root.
-    let display = env::var("DISPLAY").unwrap_or_else(|_| ":0".to_string());
-    let xauthority = env::var("XAUTHORITY").unwrap_or_default();
-
-    match Command::new("pkexec")
-        .arg("env")
-        .arg(format!("DISPLAY={}", display))
-        .arg(format!("XAUTHORITY={}", xauthority))
-        .arg(&exe)
-        .spawn()
-    {
-        Ok(_) => {
-            println!("Elevated process spawned. Exiting non-privileged instance.");
-            std::process::exit(0);
-        }
-        Err(e) => eprintln!("Failed to launch pkexec: {}", e),
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn try_relaunch_as_admin() {
-    let exe = env::current_exe().expect("Failed to get current executable path");
-    println!("Requesting administrative privileges...");
-
-    let script = format!(
-        "do shell script \"'{}'\" with administrator privileges",
-        exe.to_string_lossy()
-    );
-    match Command::new("osascript").arg("-e").arg(script).spawn() {
-        Ok(_) => {
-            println!("Elevated process spawned. Exiting non-privileged instance.");
-            std::process::exit(0);
-        }
-        Err(e) => eprintln!("Failed to launch osascript: {}", e),
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn try_relaunch_as_admin() {
-    let exe = env::current_exe().expect("Failed to get current executable path");
-    println!("Requesting administrative privileges...");
-
     let cwd = exe.parent().expect("Failed to get current directory");
 
-    match Command::new("powershell")
+    println!("Requesting administrative privileges...");
+
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux (Manjaro/Arch), we use pkexec.
+        // This opens the standard GUI password prompt.
+        match Command::new("pkexec")
+        .arg(&exe)
+        .spawn()
+        {
+            Ok(_) => {
+                println!("Elevated process spawned. Exiting non-privileged instance.");
+                std::process::exit(0);
+            },
+            Err(e) => eprintln!("Failed to launch pkexec: {}", e),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, we use osascript to run with admin privileges
+        let script = format!("do shell script \"'{}'\" with administrator privileges", exe.to_string_lossy());
+        match Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .spawn()
+        {
+            Ok(_) => {
+                println!("Elevated process spawned. Exiting non-privileged instance.");
+                std::process::exit(0);
+            },
+            Err(e) => eprintln!("Failed to launch osascript: {}", e),
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, we use PowerShell Start-Process -Verb RunAs
+        match Command::new("powershell")
         .arg("Start-Process")
         .arg("-FilePath")
         .arg(format!("\"{}\"", exe.display()))
@@ -118,18 +73,14 @@ fn try_relaunch_as_admin() {
         .arg("-Verb")
         .arg("RunAs")
         .spawn()
-    {
-        Ok(_) => {
-            println!("Elevated process spawned. Exiting non-privileged instance.");
-            std::process::exit(0);
+        {
+            Ok(_) => {
+                println!("Elevated process spawned. Exiting non-privileged instance.");
+                std::process::exit(0);
+            },
+            Err(e) => eprintln!("Failed to launch PowerShell elevation: {}", e),
         }
-        Err(e) => eprintln!("Failed to launch PowerShell elevation: {}", e),
     }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn try_relaunch_as_admin() {
-    eprintln!("Error: Self-elevation not implemented for this platform");
 }
 
 // --- TAURI COMMANDS ---
@@ -162,9 +113,12 @@ fn startup_process(window: Window) {
 
 fn main() {
     // 1. IMMEDIATE PRIVILEGE CHECK
-    if !check_is_elevated() {
+    if !is_elevated() {
         try_relaunch_as_admin();
+
+        // If we reached here, elevation failed or was denied by user.
         eprintln!("Error: This application requires administrative privileges.");
+        // We exit code 1 to indicate failure.
         std::process::exit(1);
     }
 
@@ -276,10 +230,6 @@ fn main() {
         network::firewall::update_firewall_rule,
         network::firewall::delete_firewall_rule,
 
-        // ACL & Permissions
-        network::acl::get_acl_config,
-        network::acl::save_acl_config,
-
         // Network Wifi
         network::wifi::create_hotspot,
         network::wifi::stop_hotspot,
@@ -303,7 +253,6 @@ fn main() {
         user_management::user::list_users,
         user_management::user::update_user_status,
         user_management::user::update_user_groups,
-        user_management::user::update_user_role,
         user_management::user::get_user_settings,
         user_management::user::set_user_settings,
         user_management::user::sort_users_by,
