@@ -70,7 +70,7 @@
   async function loadConfig() {
     loading = true
     try {
-      const config = await api.invokeCommand('get_acl_config')
+      const config = await api.getAclConfig()
       
       // Captive Portal
       captivePortalEnabled = config.captive_portal?.enabled ?? false
@@ -125,36 +125,92 @@
   async function saveConfig() {
     saving = true
     try {
-      await api.invokeCommand('save_acl_config', {
-        config: {
-          captive_portal: {
-            enabled: captivePortalEnabled,
-            redirect_url: portalRedirectUrl,
-            auth_required: authenticationRequired,
-            session_timeout: sessionTimeout,
-            allowed_domains: allowedBeforeAuth,
-            detection_domains: detectionDomains
-          },
-          routes: routeRules,
-          forwarding: {
-            enabled: forwardingEnabled,
-            nat_enabled: natEnabled,
-            uplink: uplinkInterface,
-            downlink: downlinkInterface,
-            rules: forwardingRules
-          },
-          dataflow: {
-            bandwidth: bandwidthLimits,
-            qos_enabled: qosEnabled,
-            qos_rules: qosRules,
-            group_limits: groupLimits
-          }
+      const payload = {
+        captive_portal: {
+          enabled: captivePortalEnabled,
+          redirect_url: portalRedirectUrl,
+          auth_required: authenticationRequired,
+          session_timeout: sessionTimeout,
+          allowed_domains: allowedBeforeAuth,
+          detection_domains: detectionDomains
+        },
+        routes: routeRules,
+        forwarding: {
+          enabled: forwardingEnabled,
+          nat_enabled: natEnabled,
+          uplink: uplinkInterface,
+          downlink: downlinkInterface,
+          rules: forwardingRules
+        },
+        dataflow: {
+          bandwidth: bandwidthLimits,
+          qos_enabled: qosEnabled,
+          qos_rules: qosRules,
+          group_limits: groupLimits
         }
-      })
+      }
+
+      await api.saveAclConfig(payload)
       alert('Configuration saved successfully!')
     } catch (e) {
       console.error('Failed to save config:', e)
       alert('Failed to save configuration: ' + e)
+    }
+    saving = false
+  }
+
+  // Per-section save helpers (merge with existing config then save)
+  async function saveCaptivePortal() {
+    saving = true
+    try {
+      const current = await api.getAclConfig()
+      const payload = { ...current, captive_portal: {
+        enabled: captivePortalEnabled,
+        redirect_url: portalRedirectUrl,
+        auth_required: authenticationRequired,
+        session_timeout: sessionTimeout,
+        allowed_domains: allowedBeforeAuth,
+        detection_domains: detectionDomains
+      }}
+      await api.saveAclConfig(payload)
+      alert('Portal settings saved')
+    } catch (e) {
+      console.error('Failed to save portal settings:', e)
+      alert('Failed to save portal settings: ' + e)
+    }
+    saving = false
+  }
+
+  async function saveRoutes() {
+    saving = true
+    try {
+      const current = await api.getAclConfig()
+      const payload = { ...current, routes: routeRules }
+      await api.saveAclConfig(payload)
+      alert('Routes saved')
+    } catch (e) {
+      console.error('Failed to save routes:', e)
+      alert('Failed to save routes: ' + e)
+    }
+    saving = false
+  }
+
+  async function saveForwarding() {
+    saving = true
+    try {
+      const current = await api.getAclConfig()
+      const payload = { ...current, forwarding: {
+        enabled: forwardingEnabled,
+        nat_enabled: natEnabled,
+        uplink: uplinkInterface,
+        downlink: downlinkInterface,
+        rules: forwardingRules
+      }}
+      await api.saveAclConfig(payload)
+      alert('Forwarding settings saved')
+    } catch (e) {
+      console.error('Failed to save forwarding:', e)
+      alert('Failed to save forwarding: ' + e)
     }
     saving = false
   }
@@ -301,9 +357,8 @@
         </h1>
       </div>
       <div class="col-sm-6 text-right">
-        <button class="btn btn-success" on:click={saveConfig} disabled={saving || loading}>
-          <i class="fas fa-save me-1"></i> {saving ? 'Saving...' : 'Save All Changes'}
-        </button>
+        <!-- Global save removed; use per-section save buttons below -->
+        <small class="text-muted">Changes are saved per-section using each card's Save button.</small>
       </div>
     </div>
   </div>
@@ -352,6 +407,11 @@
                 <div class="card card-secondary">
                   <div class="card-header">
                     <h3 class="card-title">Portal Settings</h3>
+                    <div class="card-tools">
+                      <button class="btn btn-sm btn-primary" on:click={saveCaptivePortal} disabled={saving}>
+                        <i class="fas fa-save me-1"></i> Save Portal
+                      </button>
+                    </div>
                   </div>
                   <div class="card-body">
                     <div class="form-group">
@@ -495,6 +555,14 @@
                     </div>
                   </div>
                   <div class="card-body table-responsive p-0">
+                    <div class="d-flex justify-content-between align-items-center p-2">
+                      <h5 class="mb-0">Route Rules</h5>
+                      <div>
+                        <button class="btn btn-sm btn-primary" on:click={saveRoutes} disabled={saving}>
+                          <i class="fas fa-save me-1"></i> Save Routes
+                        </button>
+                      </div>
+                    </div>
                     <table class="table table-hover text-nowrap">
                       <thead>
                         <tr>
@@ -552,6 +620,51 @@
               </div>
             </div>
 
+            <!-- Forwarding Card with its own save button -->
+            <div class="row mt-3">
+              <div class="col-12">
+                <div class="card card-warning">
+                  <div class="card-header">
+                    <h3 class="card-title">Forwarding / NAT</h3>
+                    <div class="card-tools">
+                      <button class="btn btn-sm btn-primary" on:click={saveForwarding} disabled={saving}>
+                        <i class="fas fa-save me-1"></i> Save Forwarding
+                      </button>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <!-- forwarding form fields here (reuse existing markup) -->
+                    <!-- Uplink/Downlink and rules are already bound to forwardingEnabled, etc. -->
+                    <div class="form-group">
+                      <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input" id="forwardEnabled" bind:checked={forwardingEnabled}>
+                        <label class="custom-control-label" for="forwardEnabled"><strong>Enable IP Forwarding</strong></label>
+                      </div>
+                    </div>
+                    <!-- existing forwarding UI continues -->
+                    <div class="form-group">
+                      <label>Uplink Interface</label>
+                      <select class="form-control" bind:value={uplinkInterface}>
+                        <option value="">Select uplink</option>
+                        {#each availableInterfaces as iface}
+                          <option value={iface.name}>{iface.display_name || iface.name} - {iface.ip || ''}</option>
+                        {/each}
+                      </select>
+                    </div>
+                    <!-- forwarding rules list -->
+                    <div class="mb-2">
+                      {#each forwardingRules as fr, idx}
+                        <div class="d-flex align-items-center mb-1">
+                          <div class="flex-grow-1">{fr.name} — {fr.sourceNetwork} → {fr.targetInterface}</div>
+                          <button class="btn btn-sm btn-danger ms-2" on:click={() => deleteForwardRule(idx)}>Delete</button>
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           <!-- Forwarding Tab -->
           {:else if activeTab === 'forwarding'}
             <div class="row">
@@ -586,7 +699,7 @@
                       <select class="form-control" id="uplinkIface" bind:value={uplinkInterface} disabled={!forwardingEnabled}>
                         <option value="">-- Select Interface --</option>
                         {#each availableInterfaces as iface}
-                          <option value={iface.name}>{iface.name} ({iface.ip || 'No IP'})</option>
+                          <option value={iface.name}>{iface.display_name} ({iface.ip || 'No IP'})</option>
                         {/each}
                       </select>
                       <small class="form-text text-muted">The interface connected to the internet</small>
@@ -597,7 +710,7 @@
                       <select class="form-control" id="downlinkIface" bind:value={downlinkInterface} disabled={!forwardingEnabled}>
                         <option value="">-- Select Interface --</option>
                         {#each availableInterfaces as iface}
-                          <option value={iface.name}>{iface.name} ({iface.ip || 'No IP'})</option>
+                          <option value={iface.name}>{iface.display_name} ({iface.ip || 'No IP'})</option>
                         {/each}
                       </select>
                       <small class="form-text text-muted">The interface serving DHCP clients (hotspot)</small>

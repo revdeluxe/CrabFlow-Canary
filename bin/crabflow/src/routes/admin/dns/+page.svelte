@@ -336,13 +336,13 @@
                 <td><span class="badge badge-secondary">{log.query_type}</span></td>
                 <td>
                   {#if log.status === 'Blocked'}
-                    <span class="badge badge-danger">Blocked</span>
+                    <span class="badge-status blocked">Blocked</span>
                   {:else if log.status === 'Redirected'}
-                    <span class="badge badge-warning">Redirected</span>
+                    <span class="badge-status redirected">Redirected</span>
                   {:else if log.status === 'Portal'}
-                    <span class="badge badge-info">Portal</span>
+                    <span class="badge-status portal">Portal</span>
                   {:else}
-                    <span class="badge badge-success">Allowed</span>
+                    <span class="badge-status allowed">Allowed</span>
                   {/if}
                 </td>
                 <td>

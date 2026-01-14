@@ -182,7 +182,7 @@
                   <td>{group.description}</td>
                   <td>
                     {#each group.permissions as perm}
-                      <span class="badge badge-info mr-1">{perm}</span>
+                      <span class="perm-chip" title={perm}>{perm}</span>
                     {/each}
                   </td>
                   <td>

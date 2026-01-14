@@ -33,14 +33,14 @@ impl Default for DhcpConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            captive_portal: false,
+            captive_portal: true,
             custom_captive_portal: false,
-            bind_address: "0.0.0.0".into(),
+            bind_address: "10.0.0.1".into(),
             upstream_interface: "0.0.0.0".into(),
-            range_start: "192.168.1.100".into(),
-            range_end: "192.168.1.200".into(),
+            range_start: "10.0.0.100".into(),
+            range_end: "10.0.0.200".into(),
             subnet_mask: "255.255.255.0".into(),
-            gateway: "192.168.1.1".into(),
+            gateway: "10.0.0.1".into(),
             dns_servers: vec!["8.8.8.8".into(), "8.8.4.4".into()],
             lease_time: 86400,
         }

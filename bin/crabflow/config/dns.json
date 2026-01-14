@@ -1,8 +1,0 @@
-[
-  {
-    "name": "portal.crabflow.local",
-    "rtype": "A",
-    "value": "127.0.0.1",
-    "ttl": 300
-  }
-]

@@ -21,6 +21,7 @@
       captive_portal: false,
       custom_captive_portal: false,
       bind_address: "0.0.0.0",
+      bind_by_interface: false,
       range_start: "192.168.1.100",
       range_end: "192.168.1.200",
       subnet_mask: "255.255.255.0",
@@ -187,6 +188,8 @@
       await api.saveLoggingConfig(loggingConfig)
       await api.reloadLoggingConfig()
       await api.updateUpstreamInterface(setupConfig.dhcp.upstream_interface)
+      // Apply network changes immediately
+      try { await api.reload_networking(); } catch(e) { console.warn('reload_networking failed', e) }
       alert("Settings saved successfully!")
     } catch (e) {
       console.error("Failed to save settings:", e)
@@ -370,19 +373,32 @@
               <div class="col-md-12">
                 <div class="form-group">
                   <label>Service Interface (LAN/Hotspot)</label>
-                  <select class="form-control" bind:value={setupConfig.dhcp.bind_address}>
-                    <option value="0.0.0.0">All Interfaces (0.0.0.0)</option>
-                    {#each interfaces as iface}
-                        {#each iface.ips as ip}
-                            {#if ip.includes('.')} <!-- IPv4 only for now -->
-                                <option value={ip}>
-                                    {iface.name} ({ip})
-                                </option>
-                            {/if}
-                        {/each}
-                    {/each}
-                  </select>
-                  <small class="form-text text-muted">Interface to serve DHCP/DNS on (e.g. Hotspot adapter).</small>
+                  <div class="mb-2">
+                    <label class="mr-2"><input type="checkbox" bind:checked={setupConfig.dhcp.bind_by_interface} /> Bind by interface name (choose below)</label>
+                  </div>
+                  {#if setupConfig.dhcp.bind_by_interface}
+                    <select class="form-control" on:change={(e) => setupConfig.dhcp.bind_address = e.target.value}>
+                      <option value="0.0.0.0">All Interfaces (0.0.0.0)</option>
+                      {#each interfaces as iface}
+                        <option value={iface.name}>{iface.display_name || iface.name}</option>
+                      {/each}
+                    </select>
+                    <small class="form-text text-muted">Bind DHCP/DNS to a specific interface (by name). Useful when interface has no IP yet.</small>
+                  {:else}
+                    <select class="form-control" bind:value={setupConfig.dhcp.bind_address}>
+                      <option value="0.0.0.0">All Interfaces (0.0.0.0)</option>
+                      {#each interfaces as iface}
+                          {#each iface.ips as ip}
+                              {#if ip.includes('.')} <!-- IPv4 only for now -->
+                                  <option value={ip}>
+                                      {iface.name} ({ip})
+                                  </option>
+                              {/if}
+                          {/each}
+                      {/each}
+                    </select>
+                    <small class="form-text text-muted">Interface to serve DHCP/DNS on (e.g. Hotspot adapter).</small>
+                  {/if}
                 </div>
                 <div class="form-group">
                   <label>Upstream Interface (Internet)</label>

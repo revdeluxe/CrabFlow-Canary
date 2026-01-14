@@ -265,6 +265,7 @@ fn main() {
         network::monitor::get_live_stats,
         network::monitor::start_wlan_monitoring,
         network::monitor::list_interfaces,
+        network::init::reload_networking,
 
         // Network Packet
         network::packet::send_packet,

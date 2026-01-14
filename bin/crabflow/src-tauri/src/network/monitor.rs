@@ -45,7 +45,12 @@ pub struct TrafficSummary {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NetworkInterface {
+    // original identifier (GUID on Windows, eth0 on Linux)
     pub name: String,
+    // human friendly display name for UI
+    pub display_name: String,
+    // primary IP (first) for quick display
+    pub ip: String,
     pub ips: Vec<String>,
     pub mac: String,
     pub is_primary: bool,
@@ -264,6 +269,107 @@ pub fn get_system_status_impl(sys: &mut System) -> SystemStatus {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ArpEntry {
+    pub ip: String,
+    pub mac: String,
+    pub hostname: Option<String>,
+}
+
+/// Platform-agnostic ARP listing implementation.
+pub fn list_arp_impl(do_ping: bool) -> Vec<ArpEntry> {
+    let mut results: Vec<ArpEntry> = vec![];
+
+    #[cfg(target_os = "windows")]
+    {
+        // Use `arp -a` and parse output
+        if let Ok(output) = Command::new("arp").arg("-a").output() {
+            if let Ok(text) = String::from_utf8(output.stdout) {
+                for line in text.lines() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        let ip = parts[0].trim().to_string();
+                        let mac = parts[1].trim().replace('-', ":");
+                        if ip.contains('.') && mac.contains(':') {
+                            results.push(ArpEntry { ip, mac, hostname: None });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Use `arp -n` on unix-like systems
+        if let Ok(output) = Command::new("arp").arg("-n").output() {
+            if let Ok(text) = String::from_utf8(output.stdout) {
+                for line in text.lines() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 3 {
+                        let ip = parts[0].trim().to_string();
+                        let mac = parts[2].trim().to_string();
+                        if ip.contains('.') && mac.contains(':') {
+                            results.push(ArpEntry { ip, mac, hostname: None });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    results
+}
+
+#[tauri::command]
+pub fn list_arp(do_ping: Option<bool>) -> Vec<ArpEntry> {
+    let ping = do_ping.unwrap_or(false);
+    let mut entries = list_arp_impl(ping);
+
+    // If ping sweep requested, and there is a DHCP config, perform a targeted ping
+    if ping {
+        if let Ok(cfg) = crate::sysmodules::config::load_setup_config() {
+            let dh = cfg.dhcp;
+            // Compute range and ping each address to discover alive hosts
+            let start_parts: Vec<u8> = dh.range_start.split('.').map(|s| s.parse().unwrap_or(0)).collect();
+            let end_parts: Vec<u8> = dh.range_end.split('.').map(|s| s.parse().unwrap_or(0)).collect();
+            if start_parts.len() == 4 && end_parts.len() == 4 {
+                let mut current = start_parts.clone();
+                while current <= end_parts {
+                    let ip = format!("{}.{}.{}.{}", current[0], current[1], current[2], current[3]);
+                    // skip gateway/bind
+                    if ip == dh.gateway || ip == dh.bind_address {
+                        // increment
+                        for i in (0..4).rev() {
+                            if current[i] < 255 { current[i] += 1; break; } else { current[i] = 0; }
+                        }
+                        continue;
+                    }
+
+                    // Only add if not already in entries
+                    if !entries.iter().any(|e| e.ip == ip) {
+                        // Ping the IP
+                        #[cfg(target_os = "windows")]
+                        let ping_ok = Command::new("ping").args(["-n","1","-w","200", &ip]).output().map(|o| o.status.success()).unwrap_or(false);
+                        #[cfg(not(target_os = "windows"))]
+                        let ping_ok = Command::new("ping").args(["-c","1","-W","1", &ip]).output().map(|o| o.status.success()).unwrap_or(false);
+
+                        if ping_ok {
+                            entries.push(ArpEntry { ip: ip.clone(), mac: String::new(), hostname: None });
+                        }
+                    }
+
+                    for i in (0..4).rev() {
+                        if current[i] < 255 { current[i] += 1; break; } else { current[i] = 0; }
+                    }
+                }
+            }
+        }
+    }
+
+    entries
+}
+
 /// Get system status
 #[tauri::command]
 pub fn get_system_status(state: State<Mutex<System>>) -> SystemStatus {
@@ -296,6 +402,34 @@ pub fn get_traffic_summary(state: State<Mutex<Networks>>) -> TrafficSummary {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn get_windows_interface_info() -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    // Use PowerShell to get Name, Description and GUID
+    // We use a custom separator '|||' to make parsing easier
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", "Get-NetAdapter | ForEach-Object { $_.Name + '|||' + $_.InterfaceDescription + '|||' + $_.InterfaceGuid }"])
+        .output();
+
+    if let Ok(o) = output {
+        if let Ok(text) = String::from_utf8(o.stdout) {
+            for line in text.lines() {
+                let parts: Vec<&str> = line.split("|||").collect();
+                if parts.len() >= 3 {
+                    let name = parts[0].trim();
+                    let desc = parts[1].trim();
+                    let guid = parts[2].trim(); // Usually {GUID}
+                    
+                    // Format: "Ethernet - Realtek PCIe GbE Family Controller"
+                    let display_name = format!("{} - {}", name, desc);
+                    map.insert(guid.to_string(), display_name);
+                }
+            }
+        }
+    }
+    map
+}
+
 #[tauri::command]
 pub fn list_interfaces(state: State<Mutex<Networks>>) -> Vec<NetworkInterface> {
     let mut networks = state.lock().unwrap();
@@ -312,20 +446,33 @@ pub fn list_interfaces(state: State<Mutex<Networks>>) -> Vec<NetworkInterface> {
         .map(|addr| addr.ip().to_string())
         .unwrap_or_default();
 
+    #[cfg(target_os = "windows")]
+    let windows_names = get_windows_interface_info();
+
     if let Ok(ifaces) = get_if_addrs() {
         for iface in ifaces {
-            let name = iface.name;
+            let original_name = iface.name;
             let ip = iface.addr.ip().to_string();
             
-            interfaces_map.entry(name.clone())
+            // On Windows, original_name is likely the GUID. Try to resolve friendly name.
+            #[cfg(target_os = "windows")]
+            let display_name = windows_names.get(&original_name).cloned().unwrap_or_else(|| original_name.clone());
+            
+            #[cfg(not(target_os = "windows"))]
+            let display_name = original_name.clone();
+
+            interfaces_map.entry(original_name.clone())
                 .and_modify(|i| {
                     i.ips.push(ip.clone());
                     if ip == primary_ip {
                         i.is_primary = true;
+                        i.ip = ip.clone();
                     }
                 })
                 .or_insert(NetworkInterface {
-                    name,
+                    name: original_name.clone(),
+                    display_name: display_name.clone(),
+                    ip: if ip == primary_ip { ip.clone() } else { "".to_string() },
                     ips: vec![ip.clone()],
                     mac: String::new(),
                     is_primary: ip == primary_ip,
@@ -334,9 +481,16 @@ pub fn list_interfaces(state: State<Mutex<Networks>>) -> Vec<NetworkInterface> {
     }
     
     // Enrich with MAC from sysinfo
+    // Note: sysinfo also uses the Interface Name (GUID on Windows) as key
     for (name, data) in networks.iter() {
+        // 'name' here is the Key from sysinfo (GUID on Windows)
+        // We need to match it against our map keys which use 'original_name' (GUID)
         if let Some(iface) = interfaces_map.get_mut(name) {
             iface.mac = data.mac_address().to_string();
+            // If no explicit primary ip set yet, pick the first from ips
+            if iface.ip.is_empty() && !iface.ips.is_empty() {
+                iface.ip = iface.ips[0].clone();
+            }
         }
     }
     

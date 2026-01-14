@@ -2,11 +2,13 @@ use axum::{
     routing::{get, post},
     Router,
     Json,
-    extract::State,
-    http::{Method, HeaderValue, StatusCode},
+    extract::{State, Query},
+    http::{Method, StatusCode},
     response::{Html, IntoResponse, Response},
 };
+use std::collections::HashMap;
 use tower_http::cors::CorsLayer;
+use tower_http::trace::TraceLayer;
 use std::sync::{Arc, Mutex};
 use crate::user_management::user::{UserStore, User};
 use crate::user_management::auth::{SessionStore, LoginRequest, LoginResponse};
@@ -15,6 +17,8 @@ use crate::network::{dhcp, dns, monitor, acl};
 use sysinfo::System;
 use serde_json::{Value, json};
 use uuid::Uuid;
+use axum::body::Body;
+use axum::response::IntoResponse as _;
 
 // Shared State Container
 #[derive(Clone)]
@@ -44,7 +48,7 @@ pub async fn start_server(user_store: UserStore, session_store: SessionStore) {
         .route("/api/logs", get(get_logs))
         .route("/api/system/status", get(get_system_status))
         .route("/api/dhcp/leases", get(list_leases))
-        .route("/api/dns/records", get(list_records))
+        .route("/api/dns/records", get(list_records).post(load_dns_records_handler))
         // Auth Routes
         .route("/api/auth/login", post(login_handler))
         .route("/api/auth/register", post(register_handler))
@@ -54,6 +58,11 @@ pub async fn start_server(user_store: UserStore, session_store: SessionStore) {
         // Portal API Routes (for browser access)
         .route("/api/portal/template", get(get_portal_template_handler))
         .route("/api/portal/tag", post(tag_user_handler))
+        // ACL endpoints for browser/dev fallback (register GET and POST together)
+        .route("/api/admin/acl", get(get_acl_handler).post(save_acl_handler))
+        .route("/api/arp", get(get_arp_handler))
+        // Simple POST test endpoint for debugging 404s from browser
+        .route("/api/test", post(test_post_handler))
         // Captive Portal Detection Routes (must match what devices check)
         .route("/connecttest.txt", get(captive_portal_windows))
         .route("/ncsi.txt", get(captive_portal_windows))
@@ -65,8 +74,11 @@ pub async fn start_server(user_store: UserStore, session_store: SessionStore) {
         .route("/captive", get(captive_portal_page))
         .route("/login", get(captive_portal_login_page))
         .route("/portal/login", post(portal_login_handler))
+        // Trace all requests (prints to stdout/stderr) to help debug routing
+        .layer(TraceLayer::new_for_http())
         .layer(cors)
-        .with_state(state);
+        .with_state(state)
+        .fallback(fallback_handler);
 
     // Listen on all interfaces so captive portal clients can reach us
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3030").await.unwrap();
@@ -99,6 +111,63 @@ async fn list_leases() -> Json<Value> {
 async fn list_records() -> Json<Value> {
     let records = dns::list_records();
     Json(json!(records))
+}
+
+async fn load_dns_records_handler() -> Json<Value> {
+    // For now, same behavior as GET; placeholder for future 'load' action
+    let records = dns::list_records();
+    Json(json!(records))
+}
+
+async fn test_post_handler(Json(body): Json<Value>) -> Json<Value> {
+    // Echo back the body so callers can verify the POST reached the server
+    Json(json!({ "ok": true, "received": body }))
+}
+
+async fn get_acl_handler() -> Json<Value> {
+    match acl::get_acl_config() {
+        Ok(cfg) => Json(json!(cfg)),
+        Err(e) => {
+            logging::log_error(&format!("HTTP get_acl_handler error: {}", e));
+            Json(json!({ "error": e }))
+        }
+    }
+}
+
+async fn get_arp_handler(Query(params): Query<HashMap<String, String>>) -> Json<Value> {
+    let do_ping = params.get("ping").map(|v| {
+        let v = v.to_lowercase();
+        v == "1" || v == "true" || v == "yes"
+    });
+
+    let entries = monitor::list_arp(do_ping);
+    Json(json!(entries))
+}
+
+async fn save_acl_handler(Json(cfg): Json<Value>) -> Response {
+    logging::log_info("HTTP save_acl_handler invoked");
+    logging::log_debug(&format!("save_acl_handler payload: {}", cfg));
+    // Try to deserialize into AclConfig via serde_json
+    match serde_json::from_value::<acl::AclConfig>(cfg) {
+        Ok(conf) => {
+            match acl::save_acl_config(conf) {
+                Ok(_) => {
+                    // After saving config, restart/reload affected services
+                    crate::network::init::shutdown_networking();
+                    crate::network::init::initialize_networking(None);
+                    (StatusCode::OK, Json(json!({"ok": true}))).into_response()
+                },
+                Err(e) => {
+                    logging::log_error(&format!("HTTP save_acl_handler error: {}", e));
+                    (StatusCode::INTERNAL_SERVER_ERROR, e).into_response()
+                }
+            }
+        }
+        Err(e) => {
+            logging::log_error(&format!("ACL payload deserialize error: {}", e));
+            (StatusCode::BAD_REQUEST, format!("Bad payload: {}", e)).into_response()
+        }
+    }
 }
 
 // Auth Handlers
@@ -646,4 +715,15 @@ async fn portal_login_handler(
         "success": false,
         "message": "Invalid credentials"
     }))
+}
+
+// Fallback handler to log unmatched requests (helps debug 404s from browser)
+async fn fallback_handler(req: axum::http::Request<Body>) -> Response {
+    let method = req.method().clone();
+    let uri = req.uri().to_string();
+    let msg = format!("Fallback route hit: {} {}", method, uri);
+    logging::log_warn(&msg);
+    // Also print to stdout so it's visible in the terminal immediately
+    println!("{}", msg);
+    (StatusCode::NOT_FOUND, format!("Not Found: {} {}", method, uri)).into_response()
 }

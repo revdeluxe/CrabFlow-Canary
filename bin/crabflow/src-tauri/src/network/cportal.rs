@@ -7,9 +7,40 @@ use crate::network::dns;
 use tauri::{State, AppHandle};
 use chrono::Utc;
 use std::fs;
+// use std::process::Command;
 
 fn get_portal_path() -> std::path::PathBuf {
     paths::get_config_path("portal.html")
+}
+
+pub fn apply_portal_rules(_enabled: bool, _config: &SetupConfig) {
+    #[cfg(target_os = "linux")]
+    {
+        // Assume eth0 is LAN for now based on user context
+        let lan_int = "eth0"; 
+        let gateway = &config.dhcp.gateway;
+        let portal_port = "3030";
+
+        let op = if enabled { "-I" } else { "-D" }; // Use Insert to ensure it's at the top
+
+        // 1. Redirect HTTP traffic to Portal
+        // iptables -t nat -I PREROUTING -i eth0 -p tcp --dport 80 -j DNAT --to-destination 10.0.0.1:3030
+        let _ = Command::new("iptables")
+            .args(["-t", "nat", op, "PREROUTING", "-i", lan_int, "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", &format!("{}:{}", gateway, portal_port)])
+            .output();
+            
+        // 2. Allow access to Portal Port in INPUT chain
+        let _ = Command::new("iptables")
+            .args([op, "INPUT", "-i", lan_int, "-p", "tcp", "--dport", portal_port, "-j", "ACCEPT"])
+            .output();
+            
+        // 3. For HTTPS, we can't easily decrypt, but we can block it to force fallback to HTTP or let it timeout?
+        // Or we can DNAT it to 3030 too, but the browser will show certificate error.
+        // Most modern OSes check a specific HTTP URL for captive portal detection.
+        // So redirecting port 80 is usually sufficient.
+        
+        crate::sysmodules::logging::log_info(&format!("Captive Portal rules applied: {} (Interface: {})", enabled, lan_int));
+    }
 }
 
 #[tauri::command]
@@ -53,6 +84,10 @@ pub fn save_portal_template(content: String) -> Result<(), String> {
 #[tauri::command]
 pub fn set_captive_portal(enabled: bool) -> Result<(), String> {
     let mut config: SetupConfig = fetch::fetch_setup().map_err(|e| e.to_string())?;
+    
+    // Apply (or remove) rules based on the new state
+    apply_portal_rules(enabled, &config);
+    
     config.dhcp.captive_portal = enabled;
     post::post_setup(config).map_err(|e| e.to_string())?;
     Ok(())

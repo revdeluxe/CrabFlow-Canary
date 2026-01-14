@@ -21,7 +21,20 @@ function getApiUrl() {
     
     // In browser, use the same origin but route to API port
     // For captive portal access, the API is on port 3030
-    const host = window.location.hostname;
+    // Allow an explicit override when developing or when the UI is served
+    // from a different origin than the API (e.g. Vite dev server).
+    // Set `window.__CRABFLOW_API_HOST__ = '10.0.0.1'` or store in localStorage
+    // under 'crabflow_api_host' to force the API host.
+    const explicitHost = (typeof window.__CRABFLOW_API_HOST__ !== 'undefined' && window.__CRABFLOW_API_HOST__) ||
+        window.localStorage.getItem('crabflow_api_host');
+
+    // If the UI is running on localhost but the API is expected on a specific LAN IP (e.g., 10.0.0.1),
+    // we can force the API host here. This is especially useful during development where Vite may run on localhost.
+    if (!isTauri && window.location.hostname === 'localhost' && !explicitHost) {
+        return `http://10.0.0.1:3030/api`;
+    }
+
+    const host = explicitHost || window.location.hostname;
     return `http://${host}:3030/api`;
 }
 
@@ -37,7 +50,9 @@ async function request(endpoint, method = "GET", body = null) {
             options.body = JSON.stringify(body);
         }
         const API_URL = getApiUrl();
-        const response = await fetch(`${API_URL}${endpoint}`, options);
+        // Prevent accidental double /api/api/ in endpoint
+        let url = `${API_URL}${endpoint}`.replace(/\/api\/api\//, '/api/');
+        const response = await fetch(url, options);
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(errorText || `HTTP error! status: ${response.status}`);
@@ -135,6 +150,50 @@ export const api = {
   listInterfaces: async () => invokeOrFetch('list_interfaces', {}, () => request('/network/interfaces')),
   listDevices: async () => invokeOrFetch('list_devices', {}, () => request('/devices')),
   updateUpstreamInterface: async (ip) => invokeOrFetch('update_upstream_interface', { ip }),
+    // ACL config helpers (HTTP-only; do NOT use Tauri invoke so browser/dev server works)
+    getAclConfig: async () => {
+            return await request('/api/admin/acl')
+    },
+    saveAclConfig: async (config) => {
+            return await request('/api/admin/acl', 'POST', config)
+    },
+      // Ensure a minimal ACL exists so captive portal routes are enabled on new installs
+      ensureDefaultAcl: async () => {
+          try {
+              const existing = await request('/api/admin/acl').catch(() => null);
+              if (existing && existing.captive_portal && existing.captive_portal.enabled) return existing;
+
+              const defaultAcl = {
+                  captive_portal: {
+                      enabled: true,
+                      redirect_url: window.location.origin + '/captive',
+                      auth_required: true,
+                      session_timeout: 3600,
+                      allowed_domains: [],
+                      detection_domains: [
+                          "www.msftconnecttest.com",
+                          "msftconnecttest.com",
+                          "captive.apple.com",
+                          "www.apple.com",
+                          "connectivitycheck.gstatic.com",
+                          "clients3.google.com",
+                          "connectivitycheck.android.com",
+                          "www.gstatic.com",
+                          "play.googleapis.com"
+                      ]
+                  },
+                  routes: [],
+                  forwarding: { enabled: false, nat_enabled: true, uplink: "", downlink: "", rules: [] },
+                  dataflow: { bandwidth: { globalUpload: 0, globalDownload: 0, perClientUpload: 0, perClientDownload: 0, enabled: false }, qos_enabled: false, qos_rules: [], group_limits: [] }
+              };
+
+              await request('/api/admin/acl', 'POST', defaultAcl);
+              return defaultAcl;
+          } catch (e) {
+              console.warn('ensureDefaultAcl failed:', e);
+              return null;
+          }
+      },
   
   // Hotspot (Tauri only - requires system access)
   createHotspot: async (ssid, key) => invokeOrFetch('create_hotspot', { ssid, key }),

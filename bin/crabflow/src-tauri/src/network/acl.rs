@@ -36,11 +36,14 @@ pub struct CaptivePortalConfig {
 impl Default for CaptivePortalConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             redirect_url: "http://portal.crabflow.local".to_string(),
             auth_required: true,
             session_timeout: 3600,
-            allowed_domains: vec![],
+            allowed_domains: vec![
+                "crabflow.local".to_string(),
+                "portal.crabflow.local".to_string(),
+            ],
             detection_domains: vec![
                 "www.msftconnecttest.com".to_string(),
                 "msftconnecttest.com".to_string(),
@@ -182,6 +185,7 @@ pub fn init_acl() {
             let mut cache = ACL_CONFIG.write().unwrap();
             *cache = config;
             logging::log_info("ACL configuration loaded");
+            logging::log_debug(&format!("Loaded ACL config: {:#?}", &*cache));
         }
         Err(e) => {
             logging::log_warn(&format!("Could not load ACL config, using defaults: {}", e));

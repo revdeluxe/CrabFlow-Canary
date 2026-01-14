@@ -84,6 +84,20 @@ The application can be configured via the **Setup Wizard** on first run, or thro
 
 Configuration files are stored in `bin/crabflow/config/`.
 
+### Important runtime notes
+
+- Captive Portal HTTP server: the built-in HTTP API / captive portal listens on port **3030** on all interfaces (0.0.0.0:3030). If you previously accessed the dev UI on port 1420 you may still do so locally, but captive-portal clients are redirected to port 3030.
+- DHCP: the bundled DHCP server binds to port 67 and will not hand out the configured gateway or the server bind address. If you enable DHCP ensure the `range_start`/`range_end` in Setup cover free addresses in your LAN (for example `10.0.0.2` - `10.0.0.254`).
+- Interface names: on Windows the app resolves friendly adapter names (e.g. "Ethernet - Realtek PCIe ...") by querying PowerShell `Get-NetAdapter` and preserves the original internal id (GUID) as the option value. On Linux/macOS the kernel names (eth0, en0, etc.) are used.
+- Permissions: some networking operations (binding to low ports, manipulating iptables or stopping services) require elevated privileges. On Windows run the app as Administrator; on Linux run as root.
+
+### ACL / Captive Portal notes
+
+- Saving ACL config: Use Admin → ACL & Permissions → Save. The frontend sends the ACL object directly to the backend `save_acl_config` command which persists `acl_config.json` into the app config directory.
+- Captive portal redirect rules: on Linux the app may apply `iptables` NAT rules to redirect HTTP (port 80) traffic to the portal port (3030). On Windows the app uses other techniques; you may need to configure port forwarding or allow the portal port through the local firewall.
+
+If you encounter problems saving configuration, check the application logs (Dashboard → Monitor → Logs) for error messages about file permissions or serialization errors.
+
 ## License
 
 This project is licensed under the terms of the license specified in the `LICENSE` file.

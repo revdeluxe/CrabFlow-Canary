@@ -47,7 +47,7 @@
 
   onDestroy(() => {
     if (typeof document !== 'undefined') {
-      document.body.classList.remove('layout-fixed', 'sidebar-mini', 'sidebar-collapse');
+      document.body.classList.remove('layout-fixed', 'sidebar-mini', 'sidebar-hidden');
     }
   })
 
@@ -68,7 +68,7 @@
 
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
-    document.body.classList.toggle('sidebar-collapse');
+    document.body.classList.toggle('sidebar-hidden');
   }
 
   function isActive(path) {
@@ -113,6 +113,9 @@
         <span class="brand-text fw-light sidebar-brand-text">CrabFlow</span>
       </a>
     </div>
+    <button class="sidebar-close" aria-label="Close sidebar" on:click|preventDefault={toggleSidebar}>
+      <i class="fas fa-times"></i>
+    </button>
     <!-- /.sidebar-brand -->
 
     <!-- Sidebar Wrapper -->
@@ -290,6 +293,8 @@
     text-align: center;
   }
   
+  /* Sidebar is a fixed overlay so it does not push main content
+     Default behavior: overlay on the left; content has no left margin. */
   .app-sidebar {
     position: fixed;
     top: 0;
@@ -298,43 +303,49 @@
     width: 250px;
     z-index: 1040;
     overflow-y: auto;
+    transition: transform 0.25s ease-in-out, visibility 0.25s ease-in-out;
+    will-change: transform;
   }
-  
+
   .app-header {
-    margin-left: 250px;
-    transition: margin-left 0.3s ease-in-out;
+    margin-left: 0;
+    transition: none;
   }
-  
+
   .app-main {
-    margin-left: 250px;
+    margin-left: 0;
     margin-top: 0;
     min-height: calc(100vh - 57px);
-    transition: margin-left 0.3s ease-in-out;
   }
-  
-  :global(body.sidebar-collapse) .app-header,
-  :global(body.sidebar-collapse) .app-main {
-    margin-left: 4.6rem;
+
+  /* When hidden, slide the sidebar off-screen and remove pointer events */
+  :global(body.sidebar-hidden) .app-sidebar {
+    transform: translateX(-280px);
+    visibility: hidden;
+    pointer-events: none;
   }
-  
-  :global(body.sidebar-collapse) .app-sidebar {
-    width: 4.6rem;
+
+  /* When not hidden (default), keep sidebar visible as fixed overlay */
+  :global(.app-sidebar) {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
   }
-  
-  :global(body.sidebar-collapse) .app-sidebar:hover {
-    width: 250px;
+
+  /* Close button inside the sidebar (top-right) */
+  .sidebar-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 1.05rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: 0.35rem;
+    cursor: pointer;
+    z-index: 1060;
   }
-  
-  :global(body.sidebar-collapse) .app-sidebar .sidebar-brand-text,
-  :global(body.sidebar-collapse) .app-sidebar .nav-link span,
-  :global(body.sidebar-collapse) .app-sidebar .nav-header {
-    opacity: 0;
-    white-space: nowrap;
-  }
-  
-  :global(body.sidebar-collapse) .app-sidebar:hover .sidebar-brand-text,
-  :global(body.sidebar-collapse) .app-sidebar:hover .nav-link span,
-  :global(body.sidebar-collapse) .app-sidebar:hover .nav-header {
-    opacity: 1;
-  }
+
+  .sidebar-close:hover { background: rgba(255,255,255,0.04); }
 </style>

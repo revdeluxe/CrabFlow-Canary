@@ -3,6 +3,34 @@
   import { api } from '$lib/tauri'
 
   let leases = []
+  let unmanagedDevices = []
+  let scanning = false
+  let scanModalOpen = false
+  let scanResults = []
+  
+  async function createLeaseFromScan(device) {
+    try {
+      let ip = device.ip || ''
+      if (!ip || ip.startsWith('169.')) {
+        try {
+          const suggested = await api.invokeCommand('get_next_free_ip')
+          if (suggested) ip = typeof suggested === 'string' ? suggested : (suggested.ip || '')
+        } catch (e) {
+          console.warn('get_next_free_ip failed', e)
+        }
+      }
+
+      const input = { ip: ip || '', mac: device.mac || '', hostname: device.hostname || '' }
+      await api.invokeCommand('add_static_lease', { input })
+      // refresh leases and scan results
+      await refresh()
+      // remove from scanResults
+      scanResults = scanResults.filter(d => !(d.mac && d.mac.toLowerCase() === (device.mac||'').toLowerCase()))
+      alert('Static lease created for ' + input.ip)
+    } catch (e) {
+      alert('Failed to create lease: ' + e)
+    }
+  }
   let loading = true
   let error = null
   let showModal = false
@@ -38,13 +66,40 @@
   }
 
   async function refresh() {
+    if (scanning) return
+    scanning = true
+    scanModalOpen = true
+    scanResults = []
     try {
       leases = await api.invokeCommand("list_leases")
-      
+
+      // Scan ARP table for all devices seen on the LAN
+      let arpDevices = []
+      try {
+        // Try a backend command first, fallback to fetch('/api/arp') if available
+        if (api.invokeCommand) {
+          arpDevices = await api.invokeCommand("list_arp", { do_ping: true })
+        } else if (window.fetch) {
+          const resp = await fetch('/api/arp?ping=1')
+          if (resp.ok) arpDevices = await resp.json()
+        }
+      } catch (e) {
+        console.warn("ARP scan failed:", e)
+      }
+
+      // Filter for devices not in leases and with 169.x.x.x or no IP
+      unmanagedDevices = (arpDevices || []).filter(dev => {
+        if (!dev.ip || dev.ip.startsWith("169.")) return true
+        return !leases.some(l => l.mac && l.mac.toLowerCase() === (dev.mac||"").toLowerCase())
+      })
+
+      // stash results for modal display
+      scanResults = unmanagedDevices
+
       // Get live stats for DHCP server status
       const liveStats = await api.invokeCommand('get_live_stats')
       serverStatus.running = liveStats.services_status.dhcp
-      
+
       // Try to get DHCP config for pool info
       try {
         const config = await api.invokeCommand("load_setup")
@@ -61,6 +116,8 @@
     } catch (e) {
       console.error("Failed to load leases:", e)
       error = e
+    } finally {
+      scanning = false
     }
   }
 
@@ -217,10 +274,10 @@
             <div class="card-header">
               <h3 class="card-title">Active & Static Leases</h3>
               <div class="card-tools">
-                <button type="button" class="btn btn-success btn-sm mr-2" on:click={() => showModal = true}>
+                <button type="button" class="btn btn-success btn-sm mr-2" on:click={() => showModal = true} disabled={scanning}>
                   <i class="fas fa-plus"></i> Add Static Lease
                 </button>
-                <button type="button" class="btn btn-tool" on:click={refresh}>
+                <button type="button" class="btn btn-tool" on:click={refresh} disabled={scanning}>
                   <i class="fas fa-sync"></i>
                 </button>
               </div>
@@ -264,7 +321,7 @@
                         <a href="/admin/dns" class="btn btn-info btn-xs mr-1" title="Create DNS Record">
                           <i class="fas fa-globe"></i>
                         </a>
-                        <button class="btn btn-danger btn-xs" on:click={() => removeLease(l.ip)} title="Remove">
+                        <button class="btn btn-danger btn-xs" on:click={() => removeLease(l.ip)} title="Remove" disabled={scanning}>
                           <i class="fas fa-trash"></i>
                         </button>
                       </td>
@@ -319,6 +376,75 @@
             <button type="submit" class="btn btn-success">Add Lease</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if scanModalOpen}
+  <div class="modal fade show" style="display: block; background: rgba(0,0,0,0.6); pointer-events: auto;">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h4 class="modal-title">Network Scan</h4>
+        </div>
+        <div class="modal-body">
+          {#if scanning}
+            <div class="d-flex align-items-center">
+              <div class="spinner-border text-primary mr-3" role="status">
+                <span class="sr-only">Scanning...</span>
+              </div>
+              <div>
+                <h5>Scanning network for unmanaged devices…</h5>
+                <p class="text-muted">This may take a few seconds. Please wait — other actions are disabled while scanning.</p>
+              </div>
+            </div>
+          {:else}
+            <div>
+              <h5>Scan Results</h5>
+              {#if scanResults && scanResults.length > 0}
+                <table class="table table-sm table-striped mt-2">
+                  <thead>
+                    <tr>
+                      <th>IP</th>
+                      <th>MAC</th>
+                      <th>Hostname</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each scanResults as d}
+                      <tr>
+                        <td>{d.ip || '(no IP)'}</td>
+                        <td><code>{d.mac || '-'}</code></td>
+                        <td>{d.hostname || '-'}</td>
+                        <td style="width:160px">
+                          <button class="btn btn-sm btn-primary mr-2" on:click={() => createLeaseFromScan(d)}>
+                            <i class="fas fa-plus mr-1"></i> Create Lease
+                          </button>
+                          <button class="btn btn-sm btn-secondary" on:click={() => { scanResults = scanResults.filter(x => x !== d) }}>
+                            Dismiss
+                          </button>
+                        </td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              {:else}
+                <div class="alert alert-info">No unmanaged devices found.</div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+        <div class="modal-footer">
+          {#if !scanning}
+            <button class="btn btn-secondary" on:click={() => { scanModalOpen = false; scanResults = []; }}>
+              Close
+            </button>
+            <button class="btn btn-primary" on:click={refresh}>
+              Scan Again
+            </button>
+          {/if}
+        </div>
       </div>
     </div>
   </div>

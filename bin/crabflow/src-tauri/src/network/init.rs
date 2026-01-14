@@ -1,9 +1,67 @@
+use std::thread;
+use std::time::Duration;
 use crate::sysmodules::{logging, post, fetch, config, paths};
-use crate::network::{dhcp, dns};
+use crate::network::{dhcp, dns, cportal};
 use tauri::AppHandle;
 
 #[cfg(target_os = "windows")]
 use std::process::Command;
+
+#[cfg(not(target_os = "windows"))]
+use std::process::Command;
+
+fn mask_to_prefix(mask: &str) -> Option<u8> {
+    let parts: Vec<&str> = mask.split('.').collect();
+    if parts.len() != 4 { return None; }
+    let mut bits = 0u8;
+    for p in parts {
+        if let Ok(v) = p.parse::<u8>() {
+            bits += v.count_ones() as u8;
+        } else { return None; }
+    }
+    Some(bits)
+}
+
+fn assign_ip_to_interface(interface: &str, ip: &str, mask: &str, gateway: Option<&str>) {
+    logging::log_info(&format!("Assigning IP {} mask {} to interface {}", ip, mask, interface));
+
+    #[cfg(target_os = "windows")]
+    {
+        // netsh expects interface name and ip mask gateway
+        let gw = gateway.unwrap_or(ip);
+        let _ = Command::new("netsh")
+            .args(["interface", "ip", "set", "address", &format!("name=\"{}\"", interface), "static", ip, mask, gw])
+            .output()
+            .map_err(|e| logging::log_error(&format!("Failed to assign IP (windows): {}", e))).ok();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(prefix) = mask_to_prefix(mask) {
+            let cidr = format!("{}/{}", ip, prefix);
+            let _ = Command::new("ip")
+                .args(["addr", "add", &cidr, "dev", interface])
+                .output()
+                .map_err(|e| logging::log_error(&format!("Failed to assign IP (linux): {}", e))).ok();
+            let _ = Command::new("ip").args(["link","set","dev",interface,"up"]).output().ok();
+            if let Some(gw) = gateway {
+                let _ = Command::new("ip").args(["route","add","default","via",gw,"dev",interface]).output().ok();
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // on macOS, use ifconfig
+        let _ = Command::new("ifconfig")
+            .args([interface, ip, "netmask", mask])
+            .output()
+            .map_err(|e| logging::log_error(&format!("Failed to assign IP (macos): {}", e))).ok();
+        if let Some(gw) = gateway {
+            let _ = Command::new("route").args(["add","default",gw]).output().ok();
+        }
+    }
+}
 
 #[cfg(target_os = "windows")]
 fn prepare_windows_environment() {
@@ -117,9 +175,22 @@ pub fn initialize_networking(app_handle: Option<AppHandle>) {
     // Load main configuration to set upstream interface
     match config::load_setup_config() {
         Ok(cfg) => {
-            let upstream = cfg.dhcp.upstream_interface;
+            let upstream = cfg.dhcp.upstream_interface.clone();
             logging::log_info(&format!("Setting DNS upstream interface to: {}", upstream));
             dns::set_upstream_interface(upstream);
+
+            // Apply Captive Portal rules if enabled
+            if cfg.dhcp.captive_portal {
+                logging::log_info("Applying Captive Portal rules on startup...");
+                cportal::apply_portal_rules(true, &cfg);
+            }
+
+            // If hotspot enabled, try to auto-assign gateway IP to hotspot interface
+            if cfg.hotspot.enabled {
+                logging::log_info(&format!("Hotspot enabled; attempting to assign gateway {} to interface {}", cfg.dhcp.gateway, cfg.hotspot.interface));
+                // Best-effort: assign gateway IP to the configured hotspot interface
+                assign_ip_to_interface(&cfg.hotspot.interface, &cfg.dhcp.gateway, &cfg.dhcp.subnet_mask, Some(&cfg.dhcp.gateway));
+            }
         },
         Err(e) => {
             logging::log_error(&format!("Failed to load setup config: {}", e));
@@ -164,4 +235,13 @@ pub fn shutdown_networking() {
     dhcp::stop_dhcp_server();
     dns::stop_dns_server();
     logging::log_info("Networking shutdown complete.");
+}
+
+// Tauri command to reload networking after config changes
+#[tauri::command]
+pub fn reload_networking() {
+    logging::log_info("Reloading networking components via reload_networking command...");
+    shutdown_networking();
+    // Initialize with no AppHandle (callers can restart services with appropriate handle if needed)
+    initialize_networking(None);
 }

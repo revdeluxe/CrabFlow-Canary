@@ -22,7 +22,8 @@
 /* Fix for 800x600 viewport constraint */
 html, body {
   height: 100%;
-  overflow: hidden;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* AdminLTE 4 Layout Fixes */
@@ -382,6 +383,42 @@ body.sidebar-collapse .app-sidebar:hover .sidebar-brand-text {
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
+
+/* Mobile / Small viewport tweaks (<= 800px) */
+@media (max-width: 800px) {
+  /* Keep sidebar present on small viewports to avoid breaking layout; allow collapse instead */
+  .app-sidebar { /* display: block; keep default behavior */ }
+  .app-main { height: auto; }
+  .app-content { padding: 0.5rem; }
+  .card { margin-bottom: 0.8rem; border-radius: 0.75rem; }
+  .card .card-body { padding: 0.75rem; }
+  .card .card-header { padding: 0.5rem 0.75rem; }
+  .container-fluid { padding-left: 0.6rem; padding-right: 0.6rem; }
+  table.table { font-size: 0.92rem; }
+  table.table thead th { font-size: 0.9rem; }
+  /* Compact table cells */
+  table.table td, table.table th { padding: 0.45rem 0.6rem; vertical-align: middle; }
+  /* Type column design */
+  td .badge { padding: 0.35rem 0.5rem; font-size: 0.75rem; border-radius: 0.35rem; }
+  /* Status column design */
+  .badge-status { padding: 0.35rem 0.5rem; font-size: 0.75rem; border-radius: 999px; }
+  .badge-status.allowed { background: #28a745; color: #fff; }
+  .badge-status.blocked { background: #dc3545; color: #fff; }
+  .badge-status.portal { background: #17a2b8; color: #fff; }
+  .badge-status.redirected { background: #ffc107; color: #212529; }
+  /* Permission column compact chips */
+  .perm-chip { display:inline-block; background:#f1f1f1; color:#333; padding:0.25rem 0.5rem; border-radius:0.35rem; font-size:0.75rem; margin-right:0.25rem; }
+}
+
+/* Table type column styling for desktop */
+table.table td.type-col .badge { font-weight:600; }
+
+/* Improve card spacing globally */
+.card { margin-bottom: 1rem; }
+
+/* Make user info card nickname display clearer */
+.profile-username { font-size: 1.25rem; }
+.profile-subtitle { color: #6c757d; font-size: 0.95rem; }
 
 @keyframes spin {
   to { transform: rotate(360deg); }

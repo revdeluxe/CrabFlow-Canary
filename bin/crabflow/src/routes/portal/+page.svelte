@@ -8,6 +8,8 @@
 
   onMount(async () => {
     try {
+      // Ensure ACL is present/enabled so captive portal endpoints work on fresh installs
+      try { await api.ensureDefaultAcl(); } catch (e) { console.warn('ensureDefaultAcl error:', e) }
       htmlContent = await api.getPortalTemplate()
     } catch (e) {
       console.error("Failed to load portal template:", e)
@@ -34,12 +36,13 @@
             
             // Attempt to authorize device (Captive Portal)
             // Note: tag_user signature is (username, ip, deviceName). MAC is inferred by backend.
-            try {
-                // In a real environment, we should get the client IP from the server or request
-                // For now, we use a placeholder or assume the backend handles it if we send a special flag
-                // Since this runs in browser, 'invoke' might fail if not properly bridged.
-                // Assuming this is running in a context where 'api' works.
-                await api.tagUser(username, "127.0.0.1", "Web Client")
+                try {
+                // Prefer the hostname the client used to reach the UI. That hostname
+                // will normally be the server address (e.g. 10.0.0.1) when accessed
+                // over the LAN. Avoid sending 127.0.0.1 which causes backend to
+                // treat the MAC as unknown/dummy.
+                const clientIp = (window.location && window.location.hostname) ? window.location.hostname : '127.0.0.1';
+                await api.tagUser(username, clientIp, "Web Client")
             } catch (tagErr) {
                 console.warn("Tag user failed (might be non-critical if just dashboard access):", tagErr)
             }

@@ -621,8 +621,15 @@ pub fn update_record(old_name: String, old_rtype: String, input: DnsRecordInput)
 
 /// Remove a DNS record
 pub fn remove_record(name: String, rtype: String) -> Result<(), String> {
+    logging::log_info(&format!("remove_record called with name='{}' rtype='{}'", name, rtype));
     let mut records = list_records();
-    records.retain(|r| !(r.name == name && r.rtype == rtype));
+    let before = records.len();
+
+    // Use case-insensitive comparison for safety
+    records.retain(|r| !(r.name.eq_ignore_ascii_case(&name) && r.rtype.eq_ignore_ascii_case(&rtype)));
+
+    let after = records.len();
+    logging::log_info(&format!("remove_record: before={}, after={} (removed={})", before, after, before.saturating_sub(after)));
 
     // Update Cache
     {
@@ -632,6 +639,11 @@ pub fn remove_record(name: String, rtype: String) -> Result<(), String> {
 
     let serialized = serde_json::to_string_pretty(&records).map_err(|e| e.to_string())?;
     post::write_file(&get_dns_file(), &serialized)?;
-    logging::log_event("system".into(), "remove_record".into(), name);
+    logging::log_event("system".into(), "remove_record".into(), name.clone());
+
+    if before == after {
+        return Err(format!("No matching record found for {} ({})", name, rtype));
+    }
+
     Ok(())
 }
